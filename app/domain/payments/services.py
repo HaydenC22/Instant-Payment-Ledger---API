@@ -1,0 +1,207 @@
+import asyncio
+from collections.abc import Callable
+from dataclasses import replace
+from decimal import Decimal
+from uuid import UUID
+
+from app.domain.concurrency import DEFAULT_MAX_ATTEMPTS, retry_backoff_seconds
+from app.domain.ledger.entities import Direction, JournalEntry, JournalLine
+from app.domain.ledger.invariants import validate_journal_entry
+from app.domain.payments.entities import Payment, PaymentStatus
+from app.domain.payments.state_machine import assert_transition_allowed
+from app.domain.unit_of_work import UnitOfWorkFactory
+
+
+class InvalidPaymentAmountError(ValueError):
+    def __init__(self, amount: Decimal):
+        self.amount = amount
+        super().__init__(f"payment amount must be positive, got {amount}")
+
+
+class SamePaymentAccountError(ValueError):
+    def __init__(self, account_id: UUID):
+        self.account_id = account_id
+        super().__init__(f"debtor and creditor account must differ, got {account_id} for both")
+
+
+class ConcurrentPaymentModificationError(RuntimeError):
+    def __init__(self, payment_id: UUID, attempts: int):
+        self.payment_id = payment_id
+        self.attempts = attempts
+        super().__init__(
+            f"could not update payment {payment_id} after {attempts} attempts due to "
+            "concurrent modification"
+        )
+
+
+async def initiate_payment(
+    uow_factory: UnitOfWorkFactory,
+    *,
+    debtor_account_id: UUID,
+    creditor_account_id: UUID,
+    amount: Decimal,
+    currency: str,
+    end_to_end_id: str | None = None,
+) -> Payment:
+    if amount <= 0:
+        raise InvalidPaymentAmountError(amount)
+    if debtor_account_id == creditor_account_id:
+        raise SamePaymentAccountError(debtor_account_id)
+
+    async with uow_factory() as uow:
+        payment = await uow.payments.create_payment(
+            debtor_account_id=debtor_account_id,
+            creditor_account_id=creditor_account_id,
+            amount=amount,
+            currency=currency,
+            end_to_end_id=end_to_end_id,
+        )
+        await uow.payments.record_status_transition(payment.id, None, PaymentStatus.INITIATED)
+        await uow.commit()
+    return payment
+
+
+async def _transition_status_only(
+    uow_factory: UnitOfWorkFactory,
+    payment_id: UUID,
+    to_status: PaymentStatus,
+    *,
+    reason: str | None = None,
+    max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+) -> Payment:
+    """Transitions that don't move money: initiated->authorised, ->failed."""
+    for attempt in range(max_attempts):
+        async with uow_factory() as uow:
+            payment = await uow.payments.get_payment(payment_id)
+            assert_transition_allowed(payment.status, to_status)
+
+            bumped = await uow.payments.update_payment_status(
+                payment_id, payment.version, to_status
+            )
+            if not bumped:
+                await uow.rollback()
+            else:
+                await uow.payments.record_status_transition(
+                    payment_id, payment.status, to_status, reason
+                )
+                await uow.commit()
+                return replace(payment, status=to_status, version=payment.version + 1)
+
+        if attempt < max_attempts - 1:
+            await asyncio.sleep(retry_backoff_seconds(attempt))
+
+    raise ConcurrentPaymentModificationError(payment_id, max_attempts)
+
+
+async def authorise_payment(
+    uow_factory: UnitOfWorkFactory, payment_id: UUID, *, max_attempts: int = DEFAULT_MAX_ATTEMPTS
+) -> Payment:
+    return await _transition_status_only(
+        uow_factory, payment_id, PaymentStatus.AUTHORISED, max_attempts=max_attempts
+    )
+
+
+async def fail_payment(
+    uow_factory: UnitOfWorkFactory,
+    payment_id: UUID,
+    *,
+    reason: str | None = None,
+    max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+) -> Payment:
+    return await _transition_status_only(
+        uow_factory, payment_id, PaymentStatus.FAILED, reason=reason, max_attempts=max_attempts
+    )
+
+
+async def _transition_with_ledger_entry(
+    uow_factory: UnitOfWorkFactory,
+    payment_id: UUID,
+    to_status: PaymentStatus,
+    *,
+    entry_type: str,
+    build_lines: Callable[[Payment], tuple[JournalLine, ...]],
+    max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+) -> Payment:
+    """Transitions that move money (settle, reverse): the ledger posting and the payment
+    status change happen in the same transaction, so a crash between them is impossible —
+    either both land, or the whole attempt rolls back and retries.
+    """
+    for attempt in range(max_attempts):
+        async with uow_factory() as uow:
+            payment = await uow.payments.get_payment(payment_id)
+            assert_transition_allowed(payment.status, to_status)
+
+            entry = JournalEntry(
+                entry_type=entry_type, payment_id=payment.id, lines=build_lines(payment)
+            )
+            validate_journal_entry(entry.lines)
+            account_ids = entry.account_ids
+
+            versions = await uow.ledger.get_account_versions(account_ids)
+            await uow.ledger.insert_journal_entry(entry)
+
+            conflict = False
+            for account_id in account_ids:
+                if not await uow.ledger.bump_account_version(account_id, versions[account_id]):
+                    conflict = True
+                    break
+
+            if not conflict:
+                conflict = not await uow.payments.update_payment_status(
+                    payment_id, payment.version, to_status
+                )
+
+            if conflict:
+                await uow.rollback()
+            else:
+                await uow.payments.record_status_transition(payment_id, payment.status, to_status)
+                await uow.commit()
+                return replace(payment, status=to_status, version=payment.version + 1)
+
+        if attempt < max_attempts - 1:
+            await asyncio.sleep(retry_backoff_seconds(attempt))
+
+    raise ConcurrentPaymentModificationError(payment_id, max_attempts)
+
+
+def _transfer_lines(payment: Payment) -> tuple[JournalLine, ...]:
+    return (
+        JournalLine(payment.debtor_account_id, Direction.DEBIT, payment.amount, payment.currency),
+        JournalLine(
+            payment.creditor_account_id, Direction.CREDIT, payment.amount, payment.currency
+        ),
+    )
+
+
+def _reversal_lines(payment: Payment) -> tuple[JournalLine, ...]:
+    # Mirror image of _transfer_lines: flipping debit/credit undoes the settlement.
+    return (
+        JournalLine(payment.creditor_account_id, Direction.DEBIT, payment.amount, payment.currency),
+        JournalLine(payment.debtor_account_id, Direction.CREDIT, payment.amount, payment.currency),
+    )
+
+
+async def settle_payment(
+    uow_factory: UnitOfWorkFactory, payment_id: UUID, *, max_attempts: int = DEFAULT_MAX_ATTEMPTS
+) -> Payment:
+    return await _transition_with_ledger_entry(
+        uow_factory,
+        payment_id,
+        PaymentStatus.SETTLED,
+        entry_type="transfer",
+        build_lines=_transfer_lines,
+        max_attempts=max_attempts,
+    )
+
+
+async def reverse_payment(
+    uow_factory: UnitOfWorkFactory, payment_id: UUID, *, max_attempts: int = DEFAULT_MAX_ATTEMPTS
+) -> Payment:
+    return await _transition_with_ledger_entry(
+        uow_factory,
+        payment_id,
+        PaymentStatus.REVERSED,
+        entry_type="reversal",
+        build_lines=_reversal_lines,
+        max_attempts=max_attempts,
+    )

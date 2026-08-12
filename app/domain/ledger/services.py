@@ -1,14 +1,10 @@
 import asyncio
-import random
 from uuid import UUID
 
+from app.domain.concurrency import DEFAULT_MAX_ATTEMPTS, retry_backoff_seconds
 from app.domain.ledger.entities import JournalEntry
 from app.domain.ledger.invariants import validate_journal_entry
 from app.domain.ledger.unit_of_work import LedgerUnitOfWorkFactory
-
-DEFAULT_MAX_ATTEMPTS = 5
-_BASE_BACKOFF_SECONDS = 0.01
-_MAX_BACKOFF_SECONDS = 0.2
 
 
 class ConcurrentModificationError(RuntimeError):
@@ -19,12 +15,6 @@ class ConcurrentModificationError(RuntimeError):
             f"could not post journal entry after {attempts} attempts due to concurrent "
             f"updates on accounts: {sorted(str(a) for a in account_ids)}"
         )
-
-
-def retry_backoff_seconds(attempt: int) -> float:
-    """Full-jitter exponential backoff for optimistic-lock retries. attempt is 0-indexed."""
-    ceiling = min(_MAX_BACKOFF_SECONDS, _BASE_BACKOFF_SECONDS * (2**attempt))
-    return random.uniform(0, ceiling)  # noqa: S311 - retry jitter, not security-sensitive
 
 
 async def post_journal_entry(
