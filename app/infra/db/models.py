@@ -89,7 +89,13 @@ class PaymentStatusHistoryModel(Base):
     payment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("payments.id"), index=True)
     from_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     to_status: Mapped[str] = mapped_column(String(20))
-    transitioned_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    # timezone=True: reconciliation (M6) filters this column against datetime.now(UTC)
+    # windows, so — same reasoning as webhook_deliveries.next_attempt_at — it must be
+    # TIMESTAMPTZ. Altered in a follow-up migration rather than editing the M2 migration
+    # that created this table, since that one is already applied/pushed.
+    transitioned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
     reason: Mapped[str | None] = mapped_column(nullable=True)
 
 
@@ -146,5 +152,42 @@ class WebhookDeliveryModel(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
-# FX and reconciliation tables are added in later milestones (M6-M7) as ORM models here,
-# mirroring the schema in docs/architecture.md.
+class SettlementFileRecordModel(Base):
+    __tablename__ = "settlement_file_records"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    batch_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    external_ref: Mapped[str] = mapped_column(String(100))
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    currency: Mapped[str] = mapped_column(String(3))
+    settled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    raw_line: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class ReconciliationRunModel(Base):
+    __tablename__ = "reconciliation_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    batch_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    run_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    matched_count: Mapped[int] = mapped_column()
+    break_count: Mapped[int] = mapped_column()
+    status: Mapped[str] = mapped_column(String(20))
+
+
+class ReconciliationBreakModel(Base):
+    __tablename__ = "reconciliation_breaks"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("reconciliation_runs.id"), index=True)
+    payment_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("payments.id"), nullable=True)
+    external_ref: Mapped[str] = mapped_column(String(100))
+    break_type: Mapped[str] = mapped_column(String(30))
+    ledger_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    settlement_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    details: Mapped[str] = mapped_column(String)
+
+
+# FX tables are added in a later milestone (M7) as ORM models here, mirroring the schema
+# in docs/architecture.md.
