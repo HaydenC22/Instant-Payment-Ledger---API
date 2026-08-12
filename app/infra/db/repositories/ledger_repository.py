@@ -46,6 +46,13 @@ class SqlAlchemyLedgerRepository:
             raise AccountNotFoundError(account_id)
         return _to_domain_account(row)
 
+    async def get_account_by_number(self, account_number: str) -> Account:
+        stmt = select(AccountModel).where(AccountModel.account_number == account_number)
+        row = (await self._session.execute(stmt)).scalar_one_or_none()
+        if row is None:
+            raise AccountNotFoundError(account_number)
+        return _to_domain_account(row)
+
     async def get_account_versions(self, account_ids: Iterable[UUID]) -> dict[UUID, int]:
         account_ids = list(account_ids)
         stmt = select(AccountModel.id, AccountModel.version).where(AccountModel.id.in_(account_ids))

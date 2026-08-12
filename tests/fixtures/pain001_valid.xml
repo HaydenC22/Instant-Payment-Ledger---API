@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.09">
+  <CstmrCdtTrfInitn>
+    <GrpHdr>
+      <MsgId>MSG-0001</MsgId>
+      <CreDtTm>2026-08-12T10:00:00Z</CreDtTm>
+      <NbOfTxs>1</NbOfTxs>
+      <InitgPty>
+        <Nm>Test Initiator</Nm>
+      </InitgPty>
+    </GrpHdr>
+    <PmtInf>
+      <PmtInfId>PMTINF-0001</PmtInfId>
+      <PmtMtd>TRF</PmtMtd>
+      <ReqdExctnDt>
+        <Dt>2026-08-12</Dt>
+      </ReqdExctnDt>
+      <Dbtr>
+        <Nm>Alice Tan</Nm>
+      </Dbtr>
+      <DbtrAcct>
+        <Id>
+          <Othr>
+            <Id>SG-D-0001</Id>
+          </Othr>
+        </Id>
+      </DbtrAcct>
+      <CdtTrfTxInf>
+        <PmtId>
+          <EndToEndId>E2E-0001</EndToEndId>
+        </PmtId>
+        <Amt>
+          <InstdAmt Ccy="SGD">20.00</InstdAmt>
+        </Amt>
+        <Cdtr>
+          <Nm>Bob Lee</Nm>
+        </Cdtr>
+        <CdtrAcct>
+          <Id>
+            <Othr>
+              <Id>SG-C-0001</Id>
+            </Othr>
+          </Id>
+        </CdtrAcct>
+      </CdtTrfTxInf>
+    </PmtInf>
+  </CstmrCdtTrfInitn>
+</Document>

@@ -7,9 +7,9 @@ from app.domain.ledger.entities import Account, JournalEntry
 
 
 class AccountNotFoundError(LookupError):
-    def __init__(self, account_id: UUID):
-        self.account_id = account_id
-        super().__init__(f"account not found: {account_id}")
+    def __init__(self, identifier: UUID | str):
+        self.identifier = identifier
+        super().__init__(f"account not found: {identifier}")
 
 
 class LedgerRepository(Protocol):
@@ -20,6 +20,8 @@ class LedgerRepository(Protocol):
     ) -> Account: ...
 
     async def get_account(self, account_id: UUID) -> Account: ...
+
+    async def get_account_by_number(self, account_number: str) -> Account: ...
 
     async def get_account_versions(self, account_ids: Iterable[UUID]) -> dict[UUID, int]: ...
 

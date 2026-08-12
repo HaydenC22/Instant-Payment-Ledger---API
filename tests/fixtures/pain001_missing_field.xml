@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.09">
+  <CstmrCdtTrfInitn>
+    <GrpHdr>
+      <MsgId>MSG-0002</MsgId>
+    </GrpHdr>
+    <PmtInf>
+      <PmtInfId>PMTINF-0002</PmtInfId>
+      <DbtrAcct>
+        <Id>
+          <Othr>
+            <Id>SG-D-0002</Id>
+          </Othr>
+        </Id>
+      </DbtrAcct>
+      <CdtTrfTxInf>
+        <PmtId>
+          <EndToEndId>E2E-0002</EndToEndId>
+        </PmtId>
+        <!-- Amt/InstdAmt intentionally omitted -->
+        <CdtrAcct>
+          <Id>
+            <Othr>
+              <Id>SG-C-0002</Id>
+            </Othr>
+          </Id>
+        </CdtrAcct>
+      </CdtTrfTxInf>
+    </PmtInf>
+  </CstmrCdtTrfInitn>
+</Document>
