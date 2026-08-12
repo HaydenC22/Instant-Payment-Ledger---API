@@ -15,6 +15,7 @@ from app.domain.ledger.invariants import validate_journal_entry
 from app.domain.payments.entities import Payment, PaymentStatus
 from app.domain.payments.state_machine import assert_transition_allowed
 from app.domain.unit_of_work import UnitOfWork, UnitOfWorkFactory
+from app.domain.webhooks.services import enqueue_payment_webhook_event
 
 IDEMPOTENCY_ENDPOINT_INITIATE_PAYMENT = "POST /payments"
 
@@ -67,6 +68,12 @@ async def _create_payment_within(
         end_to_end_id=end_to_end_id,
     )
     await uow.payments.record_status_transition(payment.id, None, PaymentStatus.INITIATED)
+    await enqueue_payment_webhook_event(
+        uow,
+        payment_id=payment.id,
+        event_type="payment.initiated",
+        payload=_payment_response_dict(payment),
+    )
     return payment
 
 
@@ -211,8 +218,15 @@ async def _transition_status_only(
                 await uow.payments.record_status_transition(
                     payment_id, payment.status, to_status, reason
                 )
+                updated = replace(payment, status=to_status, version=payment.version + 1)
+                await enqueue_payment_webhook_event(
+                    uow,
+                    payment_id=payment_id,
+                    event_type=f"payment.{to_status.value}",
+                    payload=_payment_response_dict(updated),
+                )
                 await uow.commit()
-                return replace(payment, status=to_status, version=payment.version + 1)
+                return updated
 
         if attempt < max_attempts - 1:
             await asyncio.sleep(retry_backoff_seconds(attempt))
@@ -282,8 +296,15 @@ async def _transition_with_ledger_entry(
                 await uow.rollback()
             else:
                 await uow.payments.record_status_transition(payment_id, payment.status, to_status)
+                updated = replace(payment, status=to_status, version=payment.version + 1)
+                await enqueue_payment_webhook_event(
+                    uow,
+                    payment_id=payment_id,
+                    event_type=f"payment.{to_status.value}",
+                    payload=_payment_response_dict(updated),
+                )
                 await uow.commit()
-                return replace(payment, status=to_status, version=payment.version + 1)
+                return updated
 
         if attempt < max_attempts - 1:
             await asyncio.sleep(retry_backoff_seconds(attempt))

@@ -20,6 +20,50 @@ from app.domain.payments.state_machine import InvalidPaymentTransitionError
 from .fakes import FakeState, make_uow_factory
 
 
+async def test_initiate_payment_enqueues_a_webhook_event_when_a_subscription_exists() -> None:
+    state = FakeState()
+    state.seed_webhook_subscription()
+    debtor, creditor = uuid4(), uuid4()
+
+    payment = await initiate_payment(
+        make_uow_factory(state),
+        debtor_account_id=debtor,
+        creditor_account_id=creditor,
+        amount=Decimal("10.00"),
+        currency="SGD",
+    )
+
+    assert len(state.webhook_events) == 1
+    enqueued_payment_id, event_type, payload = state.webhook_events[0]
+    assert enqueued_payment_id == payment.id
+    assert event_type == "payment.initiated"
+    assert payload["status"] == PaymentStatus.INITIATED
+
+
+async def test_settle_payment_enqueues_a_payment_settled_webhook_event() -> None:
+    state = FakeState()
+    state.seed_webhook_subscription(event_types=("payment.settled",))
+    payment = state.seed_payment(status=PaymentStatus.AUTHORISED)
+    uow_factory = make_uow_factory(state)
+
+    await settle_payment(uow_factory, payment.id)
+
+    settled_events = [e for e in state.webhook_events if e[1] == "payment.settled"]
+    assert len(settled_events) == 1
+    assert settled_events[0][0] == payment.id
+
+
+async def test_no_webhook_event_enqueued_when_no_subscription_matches() -> None:
+    state = FakeState()
+    state.seed_webhook_subscription(event_types=("payment.failed",))
+    payment = state.seed_payment(status=PaymentStatus.AUTHORISED)
+    uow_factory = make_uow_factory(state)
+
+    await settle_payment(uow_factory, payment.id)
+
+    assert state.webhook_events == []
+
+
 async def test_initiate_payment_creates_it_in_initiated_status() -> None:
     state = FakeState()
     debtor, creditor = uuid4(), uuid4()

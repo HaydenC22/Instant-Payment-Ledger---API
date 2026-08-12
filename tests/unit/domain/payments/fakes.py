@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 from app.domain.idempotency.entities import IdempotencyOutcome, IdempotencyOutcomeKind
 from app.domain.ledger.entities import JournalEntry
 from app.domain.payments.entities import Payment, PaymentStatus
+from app.domain.webhooks.entities import WebhookSubscription
 
 
 @dataclass
@@ -15,7 +16,20 @@ class FakeState:
     committed_entries: list[JournalEntry] = field(default_factory=list)
     status_history: list[tuple] = field(default_factory=list)
     idempotency_records: dict[tuple[str, str], dict[str, Any]] = field(default_factory=dict)
+    webhook_events: list[tuple[UUID, str, dict[str, Any]]] = field(default_factory=list)
+    active_subscriptions: list[WebhookSubscription] = field(default_factory=list)
     attempts_made: int = 0
+
+    def seed_webhook_subscription(self, event_types: tuple[str, ...] = ()) -> WebhookSubscription:
+        sub = WebhookSubscription(
+            id=uuid4(),
+            url="https://example.test/hook",
+            secret="s3cr3t",
+            event_types=event_types,
+            active=True,
+        )
+        self.active_subscriptions.append(sub)
+        return sub
 
     def seed_payment(self, **overrides) -> Payment:
         defaults = dict(
@@ -134,6 +148,25 @@ class _FakeIdempotencyRepository:
         self._pending["idempotency_complete"] = (endpoint, key, response_status_code, response_body)
 
 
+class _FakeWebhookRepository:
+    """No subscriptions configured by default, so enqueue_payment_webhook_event is a no-op
+    for the payment-domain tests — the webhook subsystem's own behaviour is unit-tested
+    separately in tests/unit/domain/webhooks/.
+    """
+
+    def __init__(self, state: FakeState, pending):
+        self._state = state
+        self._pending = pending
+
+    async def list_active_subscriptions(self):
+        return list(self._state.active_subscriptions)
+
+    async def enqueue_delivery(self, *, subscription_id, payment_id, event_type, payload) -> UUID:
+        delivery_id = uuid4()
+        self._pending["webhook_events"].append((payment_id, event_type, payload))
+        return delivery_id
+
+
 class FakeUnitOfWork:
     """In-memory stand-in for the Postgres-backed unit of work, spanning ledger + payments
     + idempotency."""
@@ -150,6 +183,7 @@ class FakeUnitOfWork:
         self.ledger: _FakeLedgerRepository | None = None
         self.payments: _FakePaymentRepository | None = None
         self.idempotency: _FakeIdempotencyRepository | None = None
+        self.webhooks: _FakeWebhookRepository | None = None
         self._pending: dict = {}
 
     async def __aenter__(self) -> "FakeUnitOfWork":
@@ -163,6 +197,7 @@ class FakeUnitOfWork:
             "status_history": [],
             "idempotency_claim": None,
             "idempotency_complete": None,
+            "webhook_events": [],
         }
         self.ledger = _FakeLedgerRepository(
             self._state, self._pending, attempt_index, self._forced_ledger_conflicts
@@ -171,6 +206,7 @@ class FakeUnitOfWork:
             self._state, self._pending, attempt_index, self._forced_payment_conflicts
         )
         self.idempotency = _FakeIdempotencyRepository(self._state, self._pending)
+        self.webhooks = _FakeWebhookRepository(self._state, self._pending)
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
@@ -203,6 +239,7 @@ class FakeUnitOfWork:
             record["status"] = "completed"
             record["response_status_code"] = status_code
             record["response_body"] = body
+        self._state.webhook_events.extend(self._pending["webhook_events"])
 
     async def rollback(self) -> None:
         self._pending = {
@@ -213,6 +250,7 @@ class FakeUnitOfWork:
             "status_history": [],
             "idempotency_claim": None,
             "idempotency_complete": None,
+            "webhook_events": [],
         }
 
 
