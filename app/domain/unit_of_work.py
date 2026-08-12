@@ -2,6 +2,7 @@ from collections.abc import Callable
 from types import TracebackType
 from typing import Protocol, Self
 
+from app.domain.idempotency.repository import IdempotencyRepository
 from app.domain.ledger.repository import LedgerRepository
 from app.domain.payments.repository import PaymentRepository
 
@@ -17,6 +18,7 @@ class UnitOfWork(Protocol):
 
     ledger: LedgerRepository
     payments: PaymentRepository
+    idempotency: IdempotencyRepository
 
     async def __aenter__(self) -> Self: ...
 

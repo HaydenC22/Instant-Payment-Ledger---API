@@ -1,7 +1,9 @@
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
+from typing import Any
 from uuid import UUID, uuid4
 
+from app.domain.idempotency.entities import IdempotencyOutcome, IdempotencyOutcomeKind
 from app.domain.ledger.entities import JournalEntry
 from app.domain.payments.entities import Payment, PaymentStatus
 
@@ -12,6 +14,7 @@ class FakeState:
     payments: dict[UUID, Payment] = field(default_factory=dict)
     committed_entries: list[JournalEntry] = field(default_factory=list)
     status_history: list[tuple] = field(default_factory=list)
+    idempotency_records: dict[tuple[str, str], dict[str, Any]] = field(default_factory=dict)
     attempts_made: int = 0
 
     def seed_payment(self, **overrides) -> Payment:
@@ -102,8 +105,38 @@ class _FakePaymentRepository:
         self._pending["status_history"].append((payment_id, from_status, to_status, reason))
 
 
+class _FakeIdempotencyRepository:
+    def __init__(self, state: FakeState, pending):
+        self._state = state
+        self._pending = pending
+
+    async def begin_attempt(
+        self, *, key: str, endpoint: str, request_hash: str
+    ) -> IdempotencyOutcome:
+        existing = self._state.idempotency_records.get((endpoint, key))
+        if existing is None:
+            self._pending["idempotency_claim"] = (endpoint, key, request_hash)
+            return IdempotencyOutcome(kind=IdempotencyOutcomeKind.STARTED)
+
+        if existing["status"] == "in_progress":
+            return IdempotencyOutcome(kind=IdempotencyOutcomeKind.IN_PROGRESS_CONFLICT)
+        if existing["request_hash"] != request_hash:
+            return IdempotencyOutcome(kind=IdempotencyOutcomeKind.HASH_MISMATCH)
+        return IdempotencyOutcome(
+            kind=IdempotencyOutcomeKind.REPLAY,
+            response_status_code=existing["response_status_code"],
+            response_body=existing["response_body"],
+        )
+
+    async def complete_attempt(
+        self, *, key: str, endpoint: str, response_status_code: int, response_body: dict[str, Any]
+    ) -> None:
+        self._pending["idempotency_complete"] = (endpoint, key, response_status_code, response_body)
+
+
 class FakeUnitOfWork:
-    """In-memory stand-in for the Postgres-backed unit of work, spanning ledger + payments."""
+    """In-memory stand-in for the Postgres-backed unit of work, spanning ledger + payments
+    + idempotency."""
 
     def __init__(
         self,
@@ -116,6 +149,7 @@ class FakeUnitOfWork:
         self._forced_payment_conflicts = forced_payment_conflicts
         self.ledger: _FakeLedgerRepository | None = None
         self.payments: _FakePaymentRepository | None = None
+        self.idempotency: _FakeIdempotencyRepository | None = None
         self._pending: dict = {}
 
     async def __aenter__(self) -> "FakeUnitOfWork":
@@ -127,6 +161,8 @@ class FakeUnitOfWork:
             "new_payment": None,
             "payment_update": None,
             "status_history": [],
+            "idempotency_claim": None,
+            "idempotency_complete": None,
         }
         self.ledger = _FakeLedgerRepository(
             self._state, self._pending, attempt_index, self._forced_ledger_conflicts
@@ -134,6 +170,7 @@ class FakeUnitOfWork:
         self.payments = _FakePaymentRepository(
             self._state, self._pending, attempt_index, self._forced_payment_conflicts
         )
+        self.idempotency = _FakeIdempotencyRepository(self._state, self._pending)
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
@@ -152,6 +189,20 @@ class FakeUnitOfWork:
                 current, status=new_status, version=current.version + 1
             )
         self._state.status_history.extend(self._pending["status_history"])
+        if self._pending["idempotency_claim"] is not None:
+            endpoint, key, request_hash = self._pending["idempotency_claim"]
+            self._state.idempotency_records[(endpoint, key)] = {
+                "status": "in_progress",
+                "request_hash": request_hash,
+                "response_status_code": None,
+                "response_body": None,
+            }
+        if self._pending["idempotency_complete"] is not None:
+            endpoint, key, status_code, body = self._pending["idempotency_complete"]
+            record = self._state.idempotency_records[(endpoint, key)]
+            record["status"] = "completed"
+            record["response_status_code"] = status_code
+            record["response_body"] = body
 
     async def rollback(self) -> None:
         self._pending = {
@@ -160,6 +211,8 @@ class FakeUnitOfWork:
             "new_payment": None,
             "payment_update": None,
             "status_history": [],
+            "idempotency_claim": None,
+            "idempotency_complete": None,
         }
 
 
