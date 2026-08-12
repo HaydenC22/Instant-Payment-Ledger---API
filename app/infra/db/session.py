@@ -1,5 +1,7 @@
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -14,10 +16,18 @@ _engine: AsyncEngine | None = None
 _sessionmaker: async_sessionmaker[AsyncSession] | None = None
 
 
+def _json_serializer(value: Any) -> str:
+    # default=str covers UUID/Decimal in JSONB payloads (e.g. cached idempotency
+    # responses) without every call site having to pre-stringify domain values.
+    return json.dumps(value, default=str)
+
+
 def get_engine() -> AsyncEngine:
     global _engine
     if _engine is None:
-        _engine = create_async_engine(get_settings().database_url, pool_pre_ping=True)
+        _engine = create_async_engine(
+            get_settings().database_url, pool_pre_ping=True, json_serializer=_json_serializer
+        )
     return _engine
 
 

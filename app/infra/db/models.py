@@ -1,8 +1,10 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
-from sqlalchemy import CheckConstraint, ForeignKey, Numeric, String, func
+from sqlalchemy import CheckConstraint, ForeignKey, Numeric, String, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -29,8 +31,9 @@ class JournalEntryModel(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     payment_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("payments.id"), nullable=True)
     entry_type: Mapped[str] = mapped_column(String(30))
-    # idempotency_key_id reference is added once that table exists (M3).
-    idempotency_key_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    idempotency_key_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("idempotency_keys.id"), nullable=True
+    )
     posted_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -81,5 +84,23 @@ class PaymentStatusHistoryModel(Base):
     reason: Mapped[str | None] = mapped_column(nullable=True)
 
 
-# Idempotency-key, FX, webhook and reconciliation tables are added in later milestones
-# (M3-M6) as ORM models here, mirroring the schema in docs/architecture.md.
+class IdempotencyKeyModel(Base):
+    __tablename__ = "idempotency_keys"
+    __table_args__ = (UniqueConstraint("endpoint", "key", name="uq_idempotency_keys_endpoint_key"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    key: Mapped[str] = mapped_column(String(255))
+    endpoint: Mapped[str] = mapped_column(String(100))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(
+        String(20), default="in_progress", server_default="in_progress"
+    )
+    response_status_code: Mapped[int | None] = mapped_column(nullable=True)
+    response_body: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    payment_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("payments.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+
+# FX, webhook and reconciliation tables are added in later milestones (M5-M7) as ORM
+# models here, mirroring the schema in docs/architecture.md.

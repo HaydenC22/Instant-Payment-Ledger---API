@@ -40,6 +40,12 @@ include = ["app*"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 
+[tool.coverage.run]
+# SQLAlchemy's async dialect bridges into sync DBAPI calls via greenlet; without this,
+# coverage.py loses the trace function across that context switch and silently
+# under-reports repository methods that run past an `await session.execute(...)`.
+concurrency = ["greenlet", "thread"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"

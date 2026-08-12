@@ -8,7 +8,16 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from testcontainers.community.postgres import PostgresContainer
 
-_MIGRATED_TABLES = ("journal_lines", "journal_entries", "accounts")
+from app.infra.db.session import _json_serializer
+
+_MIGRATED_TABLES = (
+    "idempotency_keys",
+    "payment_status_history",
+    "journal_lines",
+    "journal_entries",
+    "payments",
+    "accounts",
+)
 
 
 @pytest.fixture(scope="session")
@@ -33,7 +42,7 @@ def _apply_migrations(database_url: str) -> None:
 async def engine(database_url: str):
     # Function-scoped: pytest-asyncio gives each test its own event loop by default, and
     # asyncpg connections can't be reused across loops, so the engine must not outlive one.
-    eng = create_async_engine(database_url)
+    eng = create_async_engine(database_url, json_serializer=_json_serializer)
     yield eng
     await eng.dispose()
 
