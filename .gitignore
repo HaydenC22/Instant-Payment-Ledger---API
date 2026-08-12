@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+.env
+
+.vscode/
+.idea/
+
+loadtest/results/*.json
+
+# Personal portfolio planning notes — not part of this project's public repo
+FinTech_Portfolio_Final_3_Projects.md
