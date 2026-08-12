@@ -6,7 +6,7 @@ import pytest
 from app.domain.ledger.entities import Direction, JournalEntry, JournalLine
 from app.domain.ledger.services import ConcurrentModificationError, post_journal_entry
 from app.infra.db.repositories.ledger_repository import SqlAlchemyLedgerRepository
-from app.infra.db.unit_of_work import make_ledger_uow_factory
+from app.infra.db.unit_of_work import make_uow_factory
 
 CONCURRENCY_RUNS = 5  # repeat the race to catch flakiness, per the project's testing strategy
 
@@ -33,7 +33,7 @@ async def _balance(db_sessionmaker, account_id, currency="SGD") -> Decimal:
 async def test_balanced_entry_updates_both_account_balances(db_sessionmaker) -> None:
     debtor = await _open_account(db_sessionmaker, account_number="ACC-D-1")
     creditor = await _open_account(db_sessionmaker, account_number="ACC-C-1")
-    uow_factory = make_ledger_uow_factory(db_sessionmaker)
+    uow_factory = make_uow_factory(db_sessionmaker)
 
     entry = JournalEntry(
         entry_type="transfer",
@@ -51,7 +51,7 @@ async def test_balanced_entry_updates_both_account_balances(db_sessionmaker) -> 
 async def test_account_version_bumps_on_each_posting(db_sessionmaker) -> None:
     debtor = await _open_account(db_sessionmaker, account_number="ACC-D-2")
     creditor = await _open_account(db_sessionmaker, account_number="ACC-C-2")
-    uow_factory = make_ledger_uow_factory(db_sessionmaker)
+    uow_factory = make_uow_factory(db_sessionmaker)
 
     entry = JournalEntry(
         entry_type="transfer",
@@ -84,7 +84,7 @@ async def test_concurrent_postings_to_the_same_account_never_lose_an_update(
         await _open_account(db_sessionmaker, account_number=f"ACC-DEBTOR-{run}-{i}")
         for i in range(10)
     ]
-    uow_factory = make_ledger_uow_factory(db_sessionmaker)
+    uow_factory = make_uow_factory(db_sessionmaker)
 
     async def transfer(debtor_id) -> None:
         entry = JournalEntry(
@@ -107,7 +107,7 @@ async def test_concurrent_postings_to_the_same_account_never_lose_an_update(
 async def test_exhausting_retries_leaves_no_partial_journal_entry(db_sessionmaker) -> None:
     debtor = await _open_account(db_sessionmaker, account_number="ACC-D-3")
     creditor = await _open_account(db_sessionmaker, account_number="ACC-C-3")
-    uow_factory = make_ledger_uow_factory(db_sessionmaker)
+    uow_factory = make_uow_factory(db_sessionmaker)
 
     entry = JournalEntry(
         entry_type="transfer",
