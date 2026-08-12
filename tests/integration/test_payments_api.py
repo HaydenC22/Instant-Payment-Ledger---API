@@ -1,3 +1,4 @@
+import uuid
 from uuid import uuid4
 
 import pytest
@@ -39,18 +40,25 @@ async def _create_account(client, account_number: str) -> str:
     return response.json()["id"]
 
 
-async def test_full_payment_lifecycle_via_api(client) -> None:
-    debtor_id = await _create_account(client, "API-D-1")
-    creditor_id = await _create_account(client, "API-C-1")
-
-    create = await client.post(
+async def _create_payment(client, *, debtor_id: str, creditor_id: str, amount: str = "5.00"):
+    return await client.post(
         "/payments",
         json={
             "debtor_account_id": debtor_id,
             "creditor_account_id": creditor_id,
-            "amount": "20.00",
-            "currency": "sgd",
+            "amount": amount,
+            "currency": "SGD",
         },
+        headers={"Idempotency-Key": str(uuid.uuid4())},
+    )
+
+
+async def test_full_payment_lifecycle_via_api(client) -> None:
+    debtor_id = await _create_account(client, "API-D-1")
+    creditor_id = await _create_account(client, "API-C-1")
+
+    create = await _create_payment(
+        client, debtor_id=debtor_id, creditor_id=creditor_id, amount="20.00"
     )
     assert create.status_code == 201
     payment = create.json()
@@ -80,15 +88,7 @@ async def test_full_payment_lifecycle_via_api(client) -> None:
 async def test_settling_before_authorising_returns_409(client) -> None:
     debtor_id = await _create_account(client, "API-D-2")
     creditor_id = await _create_account(client, "API-C-2")
-    create = await client.post(
-        "/payments",
-        json={
-            "debtor_account_id": debtor_id,
-            "creditor_account_id": creditor_id,
-            "amount": "5.00",
-            "currency": "SGD",
-        },
-    )
+    create = await _create_payment(client, debtor_id=debtor_id, creditor_id=creditor_id)
     payment_id = create.json()["id"]
 
     response = await client.post(f"/payments/{payment_id}/settle")
@@ -96,29 +96,13 @@ async def test_settling_before_authorising_returns_409(client) -> None:
 
 
 async def test_create_payment_with_unknown_account_returns_404(client) -> None:
-    response = await client.post(
-        "/payments",
-        json={
-            "debtor_account_id": str(uuid4()),
-            "creditor_account_id": str(uuid4()),
-            "amount": "5.00",
-            "currency": "SGD",
-        },
-    )
+    response = await _create_payment(client, debtor_id=str(uuid4()), creditor_id=str(uuid4()))
     assert response.status_code == 404
 
 
 async def test_create_payment_with_same_debtor_and_creditor_returns_422(client) -> None:
     account_id = await _create_account(client, "API-D-3")
-    response = await client.post(
-        "/payments",
-        json={
-            "debtor_account_id": account_id,
-            "creditor_account_id": account_id,
-            "amount": "5.00",
-            "currency": "SGD",
-        },
-    )
+    response = await _create_payment(client, debtor_id=account_id, creditor_id=account_id)
     assert response.status_code == 422
 
 
@@ -130,15 +114,7 @@ async def test_get_unknown_payment_returns_404(client) -> None:
 async def test_fail_payment_records_reason(client) -> None:
     debtor_id = await _create_account(client, "API-D-4")
     creditor_id = await _create_account(client, "API-C-4")
-    create = await client.post(
-        "/payments",
-        json={
-            "debtor_account_id": debtor_id,
-            "creditor_account_id": creditor_id,
-            "amount": "5.00",
-            "currency": "SGD",
-        },
-    )
+    create = await _create_payment(client, debtor_id=debtor_id, creditor_id=creditor_id)
     payment_id = create.json()["id"]
 
     response = await client.post(f"/payments/{payment_id}/fail", json={"reason": "risk decline"})

@@ -69,7 +69,7 @@ This project is being built in milestones (see `docs/adr/` for design decisions 
 - [x] Project scaffolding — FastAPI skeleton, Docker Compose (api + db), Alembic wired up, CI (lint/test/build), CodeQL, Dependabot
 - [x] Double-entry ledger core + concurrency handling — accounts, immutable journal entries/lines, derived balances, optimistic-lock retry on concurrent postings
 - [x] Payment lifecycle state machine — `initiated → authorised → settled → reversed/failed`, illegal transitions rejected in the domain layer; settle/reverse post their ledger entry and flip payment status in one atomic transaction
-- [ ] Idempotency keys
+- [x] Idempotency keys — required `Idempotency-Key` header on payment initiation, with a `POST /payments` retry-storm test proving N concurrent identical requests create exactly one payment
 - [ ] ISO 20022 pain.001 / pacs.008
 - [ ] Webhooks + dead-letter queue
 - [ ] Reconciliation job
