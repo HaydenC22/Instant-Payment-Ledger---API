@@ -73,8 +73,8 @@ class PaymentModel(Base):
     creditor_account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("accounts.id"))
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     currency: Mapped[str] = mapped_column(String(3))
-    # fx_rate_id reference is added once that table exists (M7).
-    fx_rate_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    fx_rate_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("fx_rates.id"), nullable=True)
+    creditor_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="initiated", server_default="initiated")
     end_to_end_id: Mapped[str | None] = mapped_column(String(35), nullable=True)
     version: Mapped[int] = mapped_column(default=0, server_default="0")
@@ -189,5 +189,12 @@ class ReconciliationBreakModel(Base):
     details: Mapped[str] = mapped_column(String)
 
 
-# FX tables are added in a later milestone (M7) as ORM models here, mirroring the schema
-# in docs/architecture.md.
+class FxRateModel(Base):
+    __tablename__ = "fx_rates"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    base_currency: Mapped[str] = mapped_column(String(3))
+    quote_currency: Mapped[str] = mapped_column(String(3))
+    rate: Mapped[Decimal] = mapped_column(Numeric(18, 8))
+    booked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    source: Mapped[str] = mapped_column(String(50), default="mock-feed", server_default="mock-feed")

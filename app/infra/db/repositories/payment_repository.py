@@ -20,6 +20,7 @@ def _to_domain_payment(row: PaymentModel) -> Payment:
         version=row.version,
         end_to_end_id=row.end_to_end_id,
         fx_rate_id=row.fx_rate_id,
+        creditor_amount=row.creditor_amount,
     )
 
 
@@ -81,3 +82,13 @@ class SqlAlchemyPaymentRepository:
             )
         )
         await self._session.flush()
+
+    async def set_fx_details(
+        self, payment_id: UUID, *, fx_rate_id: UUID, creditor_amount: Decimal
+    ) -> None:
+        stmt = (
+            update(PaymentModel)
+            .where(PaymentModel.id == payment_id)
+            .values(fx_rate_id=fx_rate_id, creditor_amount=creditor_amount)
+        )
+        await self._session.execute(stmt)

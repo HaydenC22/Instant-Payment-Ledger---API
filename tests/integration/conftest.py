@@ -62,3 +62,15 @@ async def _clean_tables(engine) -> AsyncIterator[None]:
     yield
     async with engine.begin() as conn:
         await conn.execute(text(f"TRUNCATE {', '.join(_MIGRATED_TABLES)} RESTART IDENTITY CASCADE"))
+        # accounts (truncated above) holds the FX-SUSPENSE reference row the M7 migration
+        # seeds — re-insert it so FX settlement tests keep working across the whole session,
+        # not just the first test that touches accounts. fx_rates itself isn't truncated
+        # (nothing references it backwards), so the seeded mock rates persist untouched.
+        await conn.execute(
+            text(
+                "INSERT INTO accounts "
+                "(id, account_number, owner_name, account_type, currency, status, version) "
+                "VALUES (gen_random_uuid(), 'FX-SUSPENSE', 'FX Suspense', 'fx_suspense', "
+                "'SGD', 'active', 0)"
+            )
+        )

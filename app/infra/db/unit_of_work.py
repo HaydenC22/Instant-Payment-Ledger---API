@@ -3,6 +3,7 @@ from typing import Self
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.infra.db.repositories.fx_repository import SqlAlchemyFxRateRepository
 from app.infra.db.repositories.idempotency_repository import SqlAlchemyIdempotencyRepository
 from app.infra.db.repositories.ledger_repository import SqlAlchemyLedgerRepository
 from app.infra.db.repositories.payment_repository import SqlAlchemyPaymentRepository
@@ -25,6 +26,7 @@ class SqlAlchemyUnitOfWork:
         self.idempotency: SqlAlchemyIdempotencyRepository | None = None
         self.webhooks: SqlAlchemyWebhookRepository | None = None
         self.reconciliation: SqlAlchemyReconciliationRepository | None = None
+        self.fx: SqlAlchemyFxRateRepository | None = None
 
     async def __aenter__(self) -> Self:
         self._session = self._sessionmaker()
@@ -33,6 +35,7 @@ class SqlAlchemyUnitOfWork:
         self.idempotency = SqlAlchemyIdempotencyRepository(self._session)
         self.webhooks = SqlAlchemyWebhookRepository(self._session)
         self.reconciliation = SqlAlchemyReconciliationRepository(self._session)
+        self.fx = SqlAlchemyFxRateRepository(self._session)
         return self
 
     async def __aexit__(
@@ -51,6 +54,7 @@ class SqlAlchemyUnitOfWork:
         self.idempotency = None
         self.webhooks = None
         self.reconciliation = None
+        self.fx = None
 
     async def commit(self) -> None:
         assert self._session is not None
