@@ -12,6 +12,8 @@ from app.infra.db.session import _json_serializer
 
 _MIGRATED_TABLES = (
     "idempotency_keys",
+    "webhook_deliveries",
+    "webhook_subscriptions",
     "payment_status_history",
     "journal_lines",
     "journal_entries",

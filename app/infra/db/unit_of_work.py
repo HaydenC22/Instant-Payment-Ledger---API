@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.infra.db.repositories.idempotency_repository import SqlAlchemyIdempotencyRepository
 from app.infra.db.repositories.ledger_repository import SqlAlchemyLedgerRepository
 from app.infra.db.repositories.payment_repository import SqlAlchemyPaymentRepository
+from app.infra.db.repositories.webhook_repository import SqlAlchemyWebhookRepository
 
 
 class SqlAlchemyUnitOfWork:
@@ -21,12 +22,14 @@ class SqlAlchemyUnitOfWork:
         self.ledger: SqlAlchemyLedgerRepository | None = None
         self.payments: SqlAlchemyPaymentRepository | None = None
         self.idempotency: SqlAlchemyIdempotencyRepository | None = None
+        self.webhooks: SqlAlchemyWebhookRepository | None = None
 
     async def __aenter__(self) -> Self:
         self._session = self._sessionmaker()
         self.ledger = SqlAlchemyLedgerRepository(self._session)
         self.payments = SqlAlchemyPaymentRepository(self._session)
         self.idempotency = SqlAlchemyIdempotencyRepository(self._session)
+        self.webhooks = SqlAlchemyWebhookRepository(self._session)
         return self
 
     async def __aexit__(
@@ -43,6 +46,7 @@ class SqlAlchemyUnitOfWork:
         self.ledger = None
         self.payments = None
         self.idempotency = None
+        self.webhooks = None
 
     async def commit(self) -> None:
         assert self._session is not None

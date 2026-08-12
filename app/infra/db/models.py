@@ -3,8 +3,17 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import CheckConstraint, ForeignKey, Numeric, String, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Numeric,
+    String,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -102,5 +111,40 @@ class IdempotencyKeyModel(Base):
     completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
 
-# FX, webhook and reconciliation tables are added in later milestones (M5-M7) as ORM
-# models here, mirroring the schema in docs/architecture.md.
+class WebhookSubscriptionModel(Base):
+    __tablename__ = "webhook_subscriptions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    url: Mapped[str] = mapped_column(String(2048))
+    secret: Mapped[str] = mapped_column(String(255))
+    event_types: Mapped[list[str]] = mapped_column(
+        ARRAY(String(50)), default=list, server_default="{}"
+    )
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class WebhookDeliveryModel(Base):
+    __tablename__ = "webhook_deliveries"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    subscription_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("webhook_subscriptions.id"), index=True
+    )
+    payment_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("payments.id"), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(50))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(20), default="pending", server_default="pending")
+    attempt_count: Mapped[int] = mapped_column(default=0, server_default="0")
+    # timezone=True: compared directly against datetime.now(UTC) in dispatch queries, so
+    # this one (unlike the app's other timestamp columns, which are only ever recorded and
+    # displayed, never compared) must be TIMESTAMPTZ rather than naive.
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    last_error: Mapped[str | None] = mapped_column(nullable=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+# FX and reconciliation tables are added in later milestones (M6-M7) as ORM models here,
+# mirroring the schema in docs/architecture.md.
