@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     environment: str = "local"
 
     database_url: str = "postgresql+asyncpg://ledger:ledger@localhost:5432/ledger"
+    # SQLAlchemy's default (5 + 10 overflow = 15) becomes the bottleneck well before the
+    # app logic does under concurrent load — see loadtest/results/summary.md.
+    db_pool_size: int = 20
+    db_max_overflow: int = 20
 
     idempotency_key_header: str = "Idempotency-Key"
 

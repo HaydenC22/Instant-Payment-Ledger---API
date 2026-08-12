@@ -25,8 +25,13 @@ def _json_serializer(value: Any) -> str:
 def get_engine() -> AsyncEngine:
     global _engine
     if _engine is None:
+        settings = get_settings()
         _engine = create_async_engine(
-            get_settings().database_url, pool_pre_ping=True, json_serializer=_json_serializer
+            settings.database_url,
+            pool_pre_ping=True,
+            pool_size=settings.db_pool_size,
+            max_overflow=settings.db_max_overflow,
+            json_serializer=_json_serializer,
         )
     return _engine
 
