@@ -67,7 +67,7 @@ curl http://localhost:8000/health/db   # database is reachable
 This project is being built in milestones (see `docs/adr/` for design decisions as they're written). Currently implemented:
 
 - [x] Project scaffolding — FastAPI skeleton, Docker Compose (api + db), Alembic wired up, CI (lint/test/build), CodeQL, Dependabot
-- [ ] Double-entry ledger core + concurrency handling
+- [x] Double-entry ledger core + concurrency handling — accounts, immutable journal entries/lines, derived balances, optimistic-lock retry on concurrent postings
 - [ ] Payment lifecycle state machine
 - [ ] Idempotency keys
 - [ ] ISO 20022 pain.001 / pacs.008
