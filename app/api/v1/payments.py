@@ -7,11 +7,14 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import DbSession, UowFactory
 from app.api.schemas.payments import FailPaymentRequest, InitiatePaymentRequest, PaymentResponse
+from app.domain.fx.repository import FxRateNotFoundError
 from app.domain.idempotency.errors import IdempotencyInProgressError, IdempotencyKeyReusedError
+from app.domain.ledger.repository import AccountNotFoundError
 from app.domain.payments.repository import PaymentNotFoundError
 from app.domain.payments.services import (
     ConcurrentPaymentModificationError,
     InvalidPaymentAmountError,
+    PaymentCurrencyMismatchError,
     SamePaymentAccountError,
     authorise_payment,
     fail_payment,
@@ -42,12 +45,20 @@ async def create_payment(
             currency=body.currency.upper(),
             end_to_end_id=body.end_to_end_id,
         )
-    except (InvalidPaymentAmountError, SamePaymentAccountError) as exc:
+    except (
+        InvalidPaymentAmountError,
+        SamePaymentAccountError,
+        PaymentCurrencyMismatchError,
+    ) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except IdempotencyKeyReusedError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except IdempotencyInProgressError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except AccountNotFoundError as exc:
+        raise HTTPException(
+            status_code=404, detail=f"debtor account not found: {exc.identifier}"
+        ) from exc
     except IntegrityError as exc:
         raise HTTPException(
             status_code=404, detail="debtor or creditor account does not exist"
@@ -97,6 +108,8 @@ async def _run_transition(coro):
     except PaymentNotFoundError as exc:
         raise HTTPException(status_code=404, detail="payment not found") from exc
     except InvalidPaymentTransitionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except FxRateNotFoundError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ConcurrentPaymentModificationError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

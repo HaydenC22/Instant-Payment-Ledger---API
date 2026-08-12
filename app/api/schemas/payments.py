@@ -26,3 +26,4 @@ class PaymentResponse(BaseModel):
     version: int
     end_to_end_id: str | None
     fx_rate_id: UUID | None
+    creditor_amount: Decimal | None

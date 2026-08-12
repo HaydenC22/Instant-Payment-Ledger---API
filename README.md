@@ -73,7 +73,7 @@ This project is being built in milestones (see `docs/adr/` for design decisions 
 - [x] ISO 20022 pain.001 / pacs.008 — `POST /iso20022/pain001` ingests a credit transfer initiation (account numbers resolved to internal accounts), `GET /iso20022/{id}/pacs008` emits the settled FI-to-FI message; XXE-hardened XML parsing
 - [x] Webhooks + dead-letter queue — transactional outbox (delivery enqueued in the same transaction as the payment state change), exponential backoff, `GET /webhooks/dead-letters`; dispatched by a dedicated `worker` service
 - [x] Reconciliation job — matches settled payments against a settlement CSV by end-to-end ID, reporting `missing_in_settlement` / `missing_in_ledger` / `amount_mismatch` breaks; runnable via `POST /reconciliation/run`, `GET /reconciliation/runs/{id}`, or ad hoc as `docker compose exec worker python -m app.workers.reconciliation_job <file>`
-- [ ] SGQR QR generation + multi-currency FX
+- [x] SGQR QR generation + multi-currency FX — `POST /qr/generate` emits an EMV-QR-style PNG; cross-currency settlement books a 4-line FX conversion entry through a suspense account, with reversal always undoing the exact amount booked (not a freshly re-priced one)
 - [ ] Load testing results + final metrics
 
 ## Testing & CI
