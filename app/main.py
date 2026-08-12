@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.accounts import router as accounts_router
 from app.api.v1.health import router as health_router
@@ -31,6 +32,7 @@ def create_app() -> FastAPI:
     app.include_router(webhooks_router)
     app.include_router(reconciliation_router)
     app.include_router(qr_router)
+    app.mount("/ui", StaticFiles(directory="app/static", html=True), name="ui")
     return app
 
 

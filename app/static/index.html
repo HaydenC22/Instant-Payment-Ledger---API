@@ -1,0 +1,959 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ledger Console</title>
+<style>
+  :root {
+    --paper: #f0f3ec;
+    --paper-raised: #e6ebe0;
+    --paper-sunken: #e0e6da;
+    --ink: #1a2420;
+    --ink-soft: #55655c;
+    --line: #c7d0c1;
+    --line-strong: #a9b5a1;
+    --accent: #1f6f54;
+    --accent-ink: #ffffff;
+    --accent-soft: #dceae1;
+    --amber: #96681f;
+    --amber-soft: #f3e6cd;
+    --brick: #a13d3d;
+    --brick-soft: #f3dcdc;
+    --slate: #46536a;
+    --slate-soft: #e2e6ee;
+    --code-bg: #e3e9dd;
+    --shadow: 0 1px 2px rgba(26,36,32,.06), 0 8px 24px rgba(26,36,32,.06);
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --serif: ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "Consolas", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #10160f;
+      --paper-raised: #161f16;
+      --paper-sunken: #0c110c;
+      --ink: #e7ece4;
+      --ink-soft: #9fac9f;
+      --line: #29352a;
+      --line-strong: #3a4a3a;
+      --accent: #45b189;
+      --accent-ink: #06120d;
+      --accent-soft: #163329;
+      --amber: #e0b165;
+      --amber-soft: #2f2717;
+      --brick: #e08787;
+      --brick-soft: #331f1f;
+      --slate: #9fb0d8;
+      --slate-soft: #1c2536;
+      --code-bg: #131a12;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 30px rgba(0,0,0,.4);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 { font-family: var(--serif); font-weight: 600; margin: 0; }
+  code, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  button { font-family: var(--sans); cursor: pointer; }
+  input, select, textarea { font-family: var(--sans); }
+  a { color: var(--accent); }
+  ::selection { background: var(--accent-soft); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .app { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+  @media (max-width: 860px) { .app { grid-template-columns: 1fr; } }
+
+  /* ---- Sidebar ---- */
+  .sidebar {
+    background: var(--paper-raised);
+    border-right: 1px solid var(--line);
+    padding: 22px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+  }
+  @media (max-width: 860px) { .sidebar { position: static; height: auto; } }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 0 4px; }
+  .brand .mark {
+    width: 30px; height: 30px; border-radius: 7px;
+    background: var(--accent); color: var(--accent-ink);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-weight: 700; font-size: 13px;
+  }
+  .brand h1 { font-size: 1.02rem; letter-spacing: -0.01em; }
+  .brand .sub { font-family: var(--mono); font-size: 0.66rem; color: var(--ink-soft); letter-spacing: 0.04em; }
+
+  .conn {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 0.72rem; color: var(--ink-soft);
+    padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper);
+  }
+  .conn .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-soft); flex: none; }
+  .conn.ok .dot { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .conn.bad .dot { background: var(--brick); box-shadow: 0 0 0 3px var(--brick-soft); }
+
+  nav.tabs { display: flex; flex-direction: column; gap: 2px; }
+  nav.tabs button {
+    text-align: left; background: none; border: none; border-radius: 7px;
+    padding: 9px 10px; font-size: 0.88rem; color: var(--ink-soft);
+    display: flex; align-items: center; gap: 9px;
+  }
+  nav.tabs button .ic { font-family: var(--mono); font-size: 0.72rem; font-weight: 700; color: var(--accent); width: 1.8em; letter-spacing: 0.02em; }
+  nav.tabs button:hover { background: var(--paper-sunken); color: var(--ink); }
+  nav.tabs button.active { background: var(--accent-soft); color: var(--ink); font-weight: 600; }
+
+  .sidebar-foot { margin-top: auto; font-family: var(--mono); font-size: 0.68rem; color: var(--ink-soft); }
+  .sidebar-foot a { color: var(--ink-soft); }
+  .seed-btn {
+    width: 100%; padding: 9px 10px; border-radius: 7px; border: 1px dashed var(--line-strong);
+    background: transparent; color: var(--ink-soft); font-size: 0.8rem; font-family: var(--mono);
+  }
+  .seed-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .reset-btn { width: 100%; padding: 7px 10px; border-radius: 7px; border: none; background: transparent; color: var(--ink-soft); font-size: 0.72rem; font-family: var(--mono); text-decoration: underline; text-underline-offset: 2px; }
+
+  /* ---- Main ---- */
+  main { padding: 26px clamp(16px, 3vw, 40px) 140px; min-width: 0; }
+  .tab-panel { display: none; max-width: 980px; }
+  .tab-panel.active { display: block; }
+  .panel-head { margin-bottom: 20px; }
+  .panel-head h2 { font-size: 1.5rem; }
+  .panel-head p { margin: 6px 0 0; color: var(--ink-soft); max-width: 62ch; font-size: 0.95rem; }
+
+  .grid-2 { display: grid; grid-template-columns: minmax(280px, 380px) 1fr; gap: 24px; align-items: start; }
+  @media (max-width: 760px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--paper-raised); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px 20px; box-shadow: var(--shadow);
+  }
+  .card h3 { font-size: 0.95rem; margin-bottom: 14px; font-family: var(--sans); font-weight: 700; }
+  .card h3 small { display: block; font-family: var(--mono); font-weight: 400; font-size: 0.7rem; color: var(--ink-soft); margin-top: 2px; letter-spacing: 0.03em; }
+
+  .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 13px; }
+  .field label { font-size: 0.76rem; font-family: var(--mono); color: var(--ink-soft); letter-spacing: 0.02em; }
+  .field input, .field select, .field textarea {
+    background: var(--paper); border: 1px solid var(--line-strong); border-radius: 7px;
+    padding: 8px 10px; font-size: 0.88rem; color: var(--ink); width: 100%;
+  }
+  .field textarea { font-family: var(--mono); font-size: 0.8rem; resize: vertical; min-height: 90px; }
+  .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent); }
+  .field .hint { font-size: 0.72rem; color: var(--ink-soft); }
+  .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .field-inline { display: flex; gap: 8px; align-items: center; }
+  .field-inline input { flex: 1; }
+
+  .btn {
+    border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink);
+    padding: 8px 14px; border-radius: 7px; font-size: 0.84rem; font-weight: 600;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .btn.primary:hover { filter: brightness(1.06); color: var(--accent-ink); }
+  .btn.small { padding: 4px 9px; font-size: 0.72rem; border-radius: 6px; }
+  .btn.ghost { border-color: transparent; background: transparent; color: var(--ink-soft); }
+  .btn.ghost:hover { color: var(--accent); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 0.84rem; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; white-space: nowrap; }
+  th { font-family: var(--mono); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft); background: var(--paper-sunken); }
+  tr:last-child td { border-bottom: none; }
+  td.num { font-family: var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
+  .empty-row td { color: var(--ink-soft); font-style: italic; white-space: normal; }
+
+  .pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.03em; padding: 3px 9px; border-radius: 999px; font-weight: 600; text-transform: uppercase; }
+  .pill.initiated { background: var(--slate-soft); color: var(--slate); }
+  .pill.authorised { background: var(--amber-soft); color: var(--amber); }
+  .pill.settled { background: var(--accent-soft); color: var(--accent); }
+  .pill.reversed { background: var(--line); color: var(--ink-soft); }
+  .pill.failed, .pill.dead_letter { background: var(--brick-soft); color: var(--brick); }
+
+  .idchip { font-family: var(--mono); font-size: 0.76rem; background: var(--paper-sunken); border: 1px solid var(--line); border-radius: 5px; padding: 2px 6px; cursor: pointer; }
+  .idchip:hover { border-color: var(--accent); }
+
+  .fx-badge { font-family: var(--mono); font-size: 0.65rem; background: var(--slate-soft); color: var(--slate); padding: 2px 6px; border-radius: 5px; margin-left: 6px; }
+
+  .qr-result { display: flex; gap: 20px; align-items: flex-start; margin-top: 18px; flex-wrap: wrap; }
+  .qr-result img { border: 1px solid var(--line); border-radius: 10px; background: #fff; padding: 10px; width: 220px; height: 220px; }
+  .payload-box { flex: 1; min-width: 240px; }
+  .payload-box pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px; font-size: 0.72rem; white-space: pre-wrap; word-break: break-all; max-height: 220px; overflow-y: auto; }
+
+  .checks { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+  .checks label { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--ink); }
+
+  details.raw { margin-top: 6px; }
+  details.raw summary { font-family: var(--mono); font-size: 0.7rem; color: var(--ink-soft); cursor: pointer; }
+  details.raw pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font-size: 0.72rem; overflow-x: auto; margin-top: 6px; }
+
+  .toast-stack { position: fixed; top: 16px; right: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 50; max-width: 340px; }
+  .toast { background: var(--paper-raised); border: 1px solid var(--line-strong); border-left: 3px solid var(--accent); border-radius: 8px; padding: 10px 14px; font-size: 0.82rem; box-shadow: var(--shadow); animation: slidein .15s ease-out; }
+  .toast.err { border-left-color: var(--brick); }
+  @keyframes slidein { from { transform: translateX(12px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+  /* ---- Activity log drawer ---- */
+  .log-drawer {
+    position: fixed; left: 240px; right: 0; bottom: 0; z-index: 40;
+    background: var(--paper-raised); border-top: 1px solid var(--line);
+    max-height: 44vh; display: flex; flex-direction: column;
+  }
+  @media (max-width: 860px) { .log-drawer { left: 0; } }
+  .log-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; border-bottom: 1px solid var(--line); cursor: pointer; user-select: none; }
+  .log-head h4 { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-soft); font-weight: 600; }
+  .log-head .count { font-family: var(--mono); font-size: 0.68rem; color: var(--ink-soft); }
+  .log-body { overflow-y: auto; padding: 4px 16px 12px; display: none; }
+  .log-drawer.open .log-body { display: block; }
+  .log-drawer .chev { font-family: var(--mono); color: var(--ink-soft); font-size: 0.75rem; transition: transform .15s; }
+  .log-drawer.open .chev { transform: rotate(180deg); }
+  .log-entry { display: grid; grid-template-columns: 60px 46px 1fr 40px; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--line); font-family: var(--mono); font-size: 0.74rem; align-items: baseline; }
+  .log-entry:last-child { border-bottom: none; }
+  .log-entry .t { color: var(--ink-soft); }
+  .log-entry .m { font-weight: 700; color: var(--ink-soft); }
+  .log-entry .p { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .log-entry .s { text-align: right; font-weight: 700; }
+  .log-entry .s.ok2 { color: var(--accent); }
+  .log-entry .s.ok4 { color: var(--amber); }
+  .log-entry .s.ok5 { color: var(--brick); }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="mark">₴</span>
+      <div>
+        <h1>Ledger Console</h1>
+        <div class="sub">INSTANT PAYMENT LEDGER &amp; API</div>
+      </div>
+    </div>
+
+    <div class="conn" id="connStatus"><span class="dot"></span><span id="connLabel">checking connection…</span></div>
+
+    <nav class="tabs" id="tabNav">
+      <button data-tab="accounts" class="active"><span class="ic">AC</span>Accounts</button>
+      <button data-tab="payments"><span class="ic">PM</span>Payments</button>
+      <button data-tab="qr"><span class="ic">QR</span>SGQR</button>
+      <button data-tab="webhooks"><span class="ic">WH</span>Webhooks</button>
+      <button data-tab="reconciliation"><span class="ic">RC</span>Reconciliation</button>
+    </nav>
+
+    <button class="seed-btn" id="seedBtn">+ seed demo accounts</button>
+
+    <div class="sidebar-foot">
+      <p style="margin:0 0 8px;">Talking to this browser's own origin: no server changes, just a thin client over the real API.</p>
+      <a href="/docs" target="_blank" rel="noopener">Open Swagger docs →</a>
+      <button class="reset-btn" id="resetBtn" style="margin-top:10px;">clear local session data</button>
+    </div>
+  </aside>
+
+  <main>
+
+    <!-- ACCOUNTS -->
+    <section class="tab-panel active" id="tab-accounts">
+      <div class="panel-head">
+        <h2>Accounts</h2>
+        <p>Every account holds one currency. There's no balance to set: it's always derived from journal lines, so a fresh account starts at zero with no separate "fund" step.</p>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Create account</h3>
+          <form id="accountForm">
+            <div class="field">
+              <label for="acc-number">Account number</label>
+              <input id="acc-number" required maxlength="34" placeholder="ACC-1001" />
+            </div>
+            <div class="field">
+              <label for="acc-owner">Owner name</label>
+              <input id="acc-owner" required maxlength="255" placeholder="Alice Tan" />
+            </div>
+            <div class="row-2">
+              <div class="field">
+                <label for="acc-type">Account type</label>
+                <input id="acc-type" list="acc-types" required maxlength="20" value="customer" />
+                <datalist id="acc-types">
+                  <option value="customer"></option>
+                  <option value="merchant"></option>
+                  <option value="settlement"></option>
+                </datalist>
+              </div>
+              <div class="field">
+                <label for="acc-currency">Currency</label>
+                <input id="acc-currency" list="currencies" required maxlength="3" value="SGD" style="text-transform:uppercase" />
+                <datalist id="currencies">
+                  <option value="SGD"></option><option value="USD"></option>
+                  <option value="EUR"></option><option value="GBP"></option><option value="JPY"></option>
+                </datalist>
+              </div>
+            </div>
+            <div class="btn-row"><button class="btn primary" type="submit">Create account</button></div>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3>Tracked accounts <small>created from this console this session</small></h3>
+          <div class="table-wrap">
+            <table id="accountsTable">
+              <thead><tr><th>Owner</th><th>Number</th><th>Type</th><th>Ccy</th><th>Balance</th><th>ID</th><th></th></tr></thead>
+              <tbody id="accountsBody"><tr class="empty-row"><td colspan="7">No accounts yet. Create one, or use "seed demo accounts."</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PAYMENTS -->
+    <section class="tab-panel" id="tab-payments">
+      <div class="panel-head">
+        <h2>Payments</h2>
+        <p>Every payment needs an <code>Idempotency-Key</code>. Send the same key twice and you get the same payment back, not a second one. The "replay" button proves it against your own account.</p>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Initiate payment</h3>
+          <form id="paymentForm">
+            <div class="field">
+              <label for="pay-debtor">Debtor (paying) account</label>
+              <select id="pay-debtor" required></select>
+            </div>
+            <div class="field">
+              <label for="pay-creditor">Creditor (receiving) account</label>
+              <select id="pay-creditor" required></select>
+            </div>
+            <div class="row-2">
+              <div class="field">
+                <label for="pay-amount">Amount</label>
+                <input id="pay-amount" type="number" min="0.01" step="0.01" required value="25.00" />
+              </div>
+              <div class="field">
+                <label for="pay-currency">Currency</label>
+                <input id="pay-currency" readonly />
+                <span class="hint">locked to the debtor's currency; conversion to the creditor's currency happens automatically at settlement</span>
+              </div>
+            </div>
+            <div class="field">
+              <label for="pay-e2e">End-to-end ID <span style="opacity:.6">(optional)</span></label>
+              <input id="pay-e2e" maxlength="35" placeholder="INV-2026-0001" />
+            </div>
+            <div class="field">
+              <label for="pay-idem">Idempotency-Key</label>
+              <div class="field-inline">
+                <input id="pay-idem" class="mono" readonly />
+                <button type="button" class="btn small" id="regenIdemBtn">new</button>
+              </div>
+            </div>
+            <div class="btn-row">
+              <button class="btn primary" type="submit">Initiate payment</button>
+              <button class="btn" type="button" id="replayBtn">Replay same request</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3>Tracked payments</h3>
+          <div class="table-wrap">
+            <table id="paymentsTable">
+              <thead><tr><th>Route</th><th>Amount</th><th>Status</th><th>ID</th><th>Actions</th></tr></thead>
+              <tbody id="paymentsBody"><tr class="empty-row"><td colspan="5">No payments yet.</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- QR -->
+    <section class="tab-panel" id="tab-qr">
+      <div class="panel-head">
+        <h2>SGQR generator</h2>
+        <p>Builds an EMVCo-style QR for receiving a payment into an account. Leave amount blank for a reusable static QR; set it for a one-off dynamic QR.</p>
+      </div>
+      <div class="card" style="max-width:520px;">
+        <h3>Generate QR</h3>
+        <form id="qrForm">
+          <div class="field">
+            <label for="qr-account">Account</label>
+            <select id="qr-account" required></select>
+          </div>
+          <div class="row-2">
+            <div class="field">
+              <label for="qr-amount">Amount <span style="opacity:.6">(optional)</span></label>
+              <input id="qr-amount" type="number" min="0.01" step="0.01" placeholder="static QR" />
+            </div>
+            <div class="field">
+              <label for="qr-city">Merchant city</label>
+              <input id="qr-city" maxlength="15" value="Singapore" />
+            </div>
+          </div>
+          <div class="btn-row"><button class="btn primary" type="submit">Generate QR</button></div>
+        </form>
+        <div class="qr-result" id="qrResult" style="display:none;">
+          <img id="qrImage" alt="Generated SGQR code" />
+          <div class="payload-box">
+            <div class="field"><label>Raw EMV-QR TLV payload</label></div>
+            <pre id="qrPayload"></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- WEBHOOKS -->
+    <section class="tab-panel" id="tab-webhooks">
+      <div class="panel-head">
+        <h2>Webhooks</h2>
+        <p>Subscribe a URL to payment events. Deliveries are HMAC-signed and retried with backoff; anything that exhausts its retries shows up below as a dead letter.</p>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Create subscription</h3>
+          <form id="webhookForm">
+            <div class="field">
+              <label for="wh-url">Callback URL</label>
+              <input id="wh-url" type="url" required placeholder="https://example.com/hooks/ledger" />
+            </div>
+            <div class="field">
+              <label for="wh-secret">Signing secret</label>
+              <div class="field-inline">
+                <input id="wh-secret" minlength="8" maxlength="255" required />
+                <button type="button" class="btn small" id="genSecretBtn">generate</button>
+              </div>
+              <span class="hint">used to HMAC-sign deliveries; never echoed back by the API after creation</span>
+            </div>
+            <div class="field">
+              <label>Event types <span style="opacity:.6">(none checked = all events)</span></label>
+              <div class="checks" id="whEventChecks">
+                <label><input type="checkbox" value="payment.initiated" /> payment.initiated</label>
+                <label><input type="checkbox" value="payment.authorised" /> payment.authorised</label>
+                <label><input type="checkbox" value="payment.settled" /> payment.settled</label>
+                <label><input type="checkbox" value="payment.reversed" /> payment.reversed</label>
+                <label><input type="checkbox" value="payment.failed" /> payment.failed</label>
+              </div>
+            </div>
+            <div class="btn-row"><button class="btn primary" type="submit">Create subscription</button></div>
+          </form>
+        </div>
+        <div class="card">
+          <h3>Dead-letter queue</h3>
+          <div class="btn-row" style="margin-bottom:12px;"><button class="btn" id="refreshDlqBtn">Refresh dead letters</button></div>
+          <div class="table-wrap">
+            <table id="dlqTable">
+              <thead><tr><th>Event</th><th>Attempts</th><th>Last error</th><th>Payment</th></tr></thead>
+              <tbody id="dlqBody"><tr class="empty-row"><td colspan="4">No dead letters fetched yet.</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RECONCILIATION -->
+    <section class="tab-panel" id="tab-reconciliation">
+      <div class="panel-head">
+        <h2>Reconciliation</h2>
+        <p>Paste a settlement CSV (<code>external_ref,amount,currency,settled_at</code>) and match it against payments settled in the lookback window. Use a payment's end-to-end ID as its <code>external_ref</code> to see a clean match.</p>
+      </div>
+      <div class="card" style="max-width:680px;">
+        <h3>Run reconciliation</h3>
+        <div class="field">
+          <label for="recon-csv">Settlement CSV</label>
+          <textarea id="recon-csv" placeholder="external_ref,amount,currency,settled_at"></textarea>
+        </div>
+        <div class="row-2">
+          <div class="field">
+            <label for="recon-window">Lookback window (hours)</label>
+            <input id="recon-window" type="number" min="1" value="24" />
+          </div>
+          <div class="field" style="justify-content:flex-end;">
+            <button type="button" class="btn small" id="prefillReconBtn" style="width:fit-content;">prefill from a settled payment</button>
+          </div>
+        </div>
+        <div class="btn-row"><button class="btn primary" id="runReconBtn">Run reconciliation</button></div>
+
+        <div id="reconResult" style="display:none; margin-top:18px;">
+          <div class="btn-row" style="margin-bottom:10px;">
+            <span class="pill settled" id="reconMatched"></span>
+            <span class="pill failed" id="reconBreaks"></span>
+          </div>
+          <div class="table-wrap">
+            <table id="reconTable">
+              <thead><tr><th>Break type</th><th>External ref</th><th>Ledger amt</th><th>Settlement amt</th></tr></thead>
+              <tbody id="reconBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div class="log-drawer" id="logDrawer">
+  <div class="log-head" id="logHead">
+    <h4>Activity log: every request this console has made</h4>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <span class="count" id="logCount">0 calls</span>
+      <span class="chev">▲</span>
+    </div>
+  </div>
+  <div class="log-body" id="logBody"></div>
+</div>
+
+<div class="toast-stack" id="toastStack"></div>
+
+<script>
+(() => {
+  const $ = (sel, el = document) => el.querySelector(sel);
+  const $$ = (sel, el = document) => Array.from(el.querySelectorAll(sel));
+
+  // ---------- persisted state ----------
+  const store = {
+    get accounts() { return JSON.parse(localStorage.getItem('ledger_accounts') || '[]'); },
+    set accounts(v) { localStorage.setItem('ledger_accounts', JSON.stringify(v)); },
+    get payments() { return JSON.parse(localStorage.getItem('ledger_payments') || '[]'); },
+    set payments(v) { localStorage.setItem('ledger_payments', JSON.stringify(v)); },
+  };
+
+  // ---------- toast ----------
+  function toast(msg, isErr = false) {
+    const el = document.createElement('div');
+    el.className = 'toast' + (isErr ? ' err' : '');
+    el.textContent = msg;
+    $('#toastStack').appendChild(el);
+    setTimeout(() => el.remove(), 4200);
+  }
+
+  // ---------- activity log ----------
+  let logCount = 0;
+  function logRequest(method, path, status) {
+    logCount++;
+    $('#logCount').textContent = logCount + (logCount === 1 ? ' call' : ' calls');
+    const row = document.createElement('div');
+    row.className = 'log-entry';
+    const statusClass = status >= 500 ? 's ok5' : status >= 400 ? 's ok4' : 's ok2';
+    const t = new Date().toLocaleTimeString([], { hour12: false });
+    row.innerHTML = `<span class="t">${t}</span><span class="m">${method}</span><span class="p">${path}</span><span class="${statusClass}">${status}</span>`;
+    const body = $('#logBody');
+    body.insertBefore(row, body.firstChild);
+  }
+  $('#logHead').addEventListener('click', () => $('#logDrawer').classList.toggle('open'));
+
+  // ---------- API helper ----------
+  async function api(method, path, { body, headers, raw } = {}) {
+    const opts = { method, headers: { ...(headers || {}) } };
+    if (body !== undefined) {
+      if (!(body instanceof Blob) && typeof body !== 'string') {
+        opts.headers['Content-Type'] = 'application/json';
+        opts.body = JSON.stringify(body);
+      } else {
+        opts.body = body;
+      }
+    }
+    let res;
+    try {
+      res = await fetch(path, opts);
+    } catch (e) {
+      logRequest(method, path, 0);
+      throw new Error('Network error: is the API reachable at this origin?');
+    }
+    logRequest(method, path, res.status);
+    if (raw) return res;
+    if (res.status === 204) return null;
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+    if (!res.ok) {
+      const detail = (data && data.detail) ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)) : res.statusText;
+      const err = new Error(`${res.status}: ${detail}`);
+      err.status = res.status;
+      err.data = data;
+      throw err;
+    }
+    return data;
+  }
+
+  // ---------- connection check ----------
+  async function checkConnection() {
+    const el = $('#connStatus'), label = $('#connLabel');
+    try {
+      const r = await fetch('/health/db');
+      if (r.ok) {
+        el.className = 'conn ok'; label.textContent = 'API + database reachable';
+      } else {
+        el.className = 'conn bad'; label.textContent = `API responded ${r.status}`;
+      }
+    } catch {
+      el.className = 'conn bad'; label.textContent = 'cannot reach API on this origin';
+    }
+  }
+  checkConnection();
+  setInterval(checkConnection, 15000);
+
+  // ---------- tabs ----------
+  $$('nav.tabs button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      $$('nav.tabs button').forEach(b => b.classList.remove('active'));
+      $$('.tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      $('#tab-' + btn.dataset.tab).classList.add('active');
+    });
+  });
+
+  // ---------- helpers ----------
+  function shortId(id) { return id ? id.slice(0, 8) : ''; }
+  function copyChip(el, full) {
+    el.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(full); toast('Copied ' + full); }
+      catch { toast('Could not copy to clipboard', true); }
+    });
+  }
+  function fmtAmount(a) { return Number(a).toFixed(2); }
+
+  // ================= ACCOUNTS =================
+  function accountLabel(a) { return `${a.owner_name} — ${a.account_number} (${a.currency})`; }
+
+  function renderAccounts() {
+    const accounts = store.accounts;
+    const body = $('#accountsBody');
+    body.innerHTML = '';
+    if (!accounts.length) {
+      body.innerHTML = '<tr class="empty-row"><td colspan="7">No accounts yet. Create one, or use "seed demo accounts."</td></tr>';
+    } else {
+      accounts.forEach(a => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${a.owner_name}</td>
+          <td class="mono">${a.account_number}</td>
+          <td>${a.account_type}</td>
+          <td class="mono">${a.currency}</td>
+          <td class="num mono" id="bal-${a.id}">${a.balance !== undefined ? fmtAmount(a.balance) : '—'}</td>
+          <td><span class="idchip" data-id="${a.id}">${shortId(a.id)}</span></td>
+          <td><button class="btn small refresh-bal" data-id="${a.id}" data-ccy="${a.currency}">↻ balance</button></td>
+        `;
+        body.appendChild(tr);
+      });
+    }
+    $$('.idchip', body).forEach(chip => copyChip(chip, chip.dataset.id));
+    $$('.refresh-bal', body).forEach(btn => btn.addEventListener('click', () => refreshBalance(btn.dataset.id, btn.dataset.ccy)));
+    populateAccountSelects();
+  }
+
+  async function refreshBalance(id, ccy) {
+    try {
+      const bal = await api('GET', `/accounts/${id}/balance?currency=${ccy}`);
+      const accounts = store.accounts;
+      const acc = accounts.find(a => a.id === id);
+      if (acc) { acc.balance = bal.balance; store.accounts = accounts; }
+      const cell = document.getElementById('bal-' + id);
+      if (cell) cell.textContent = fmtAmount(bal.balance);
+    } catch (e) { toast(e.message, true); }
+  }
+
+  function populateAccountSelects() {
+    const accounts = store.accounts;
+    for (const selId of ['pay-debtor', 'pay-creditor', 'qr-account']) {
+      const sel = $('#' + selId);
+      const prevVal = sel.value;
+      sel.innerHTML = accounts.length ? '' : '<option value="">— no tracked accounts —</option>';
+      accounts.forEach(a => {
+        const opt = document.createElement('option');
+        opt.value = a.id;
+        opt.textContent = accountLabel(a);
+        sel.appendChild(opt);
+      });
+      if (accounts.some(a => a.id === prevVal)) sel.value = prevVal;
+    }
+    syncPaymentCurrency();
+  }
+
+  function syncPaymentCurrency() {
+    const debtorId = $('#pay-debtor').value;
+    const acc = store.accounts.find(a => a.id === debtorId);
+    $('#pay-currency').value = acc ? acc.currency : '';
+  }
+  $('#pay-debtor').addEventListener('change', syncPaymentCurrency);
+
+  $('#accountForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = {
+      account_number: $('#acc-number').value.trim(),
+      owner_name: $('#acc-owner').value.trim(),
+      account_type: $('#acc-type').value.trim(),
+      currency: $('#acc-currency').value.trim().toUpperCase(),
+    };
+    try {
+      const acc = await api('POST', '/accounts', { body });
+      const accounts = store.accounts;
+      accounts.unshift({ ...acc, balance: 0 });
+      store.accounts = accounts;
+      renderAccounts();
+      toast(`Account created: ${acc.account_number}`);
+      $('#accountForm').reset();
+      $('#acc-currency').value = 'SGD';
+      $('#acc-type').value = 'customer';
+    } catch (err) { toast(err.message, true); }
+  });
+
+  $('#seedBtn').addEventListener('click', async () => {
+    const seeds = [
+      { account_number: 'ACC-ALICE', owner_name: 'Alice Tan', account_type: 'customer', currency: 'SGD' },
+      { account_number: 'ACC-BOB', owner_name: 'Bob Lim', account_type: 'customer', currency: 'SGD' },
+      { account_number: 'ACC-MERCHANT', owner_name: 'Kopi & Toast', account_type: 'merchant', currency: 'SGD' },
+      { account_number: 'ACC-USD', owner_name: 'Overseas Supplier', account_type: 'customer', currency: 'USD' },
+    ];
+    const accounts = store.accounts;
+    let created = 0;
+    for (const s of seeds) {
+      const suffix = Math.random().toString(36).slice(2, 6);
+      try {
+        const acc = await api('POST', '/accounts', { body: { ...s, account_number: `${s.account_number}-${suffix}` } });
+        accounts.unshift({ ...acc, balance: 0 });
+        created++;
+      } catch (e) { /* keep going even if one fails */ }
+    }
+    store.accounts = accounts;
+    renderAccounts();
+    toast(`Seeded ${created} demo accounts`);
+  });
+
+  $('#resetBtn').addEventListener('click', () => {
+    localStorage.removeItem('ledger_accounts');
+    localStorage.removeItem('ledger_payments');
+    renderAccounts();
+    renderPayments();
+    toast('Cleared local session data (server data is untouched)');
+  });
+
+  // ================= PAYMENTS =================
+  function newIdemKey() {
+    return (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    }));
+  }
+  $('#pay-idem').value = newIdemKey();
+  $('#regenIdemBtn').addEventListener('click', () => { $('#pay-idem').value = newIdemKey(); });
+
+  const ACTIONS_FOR_STATUS = {
+    initiated: [['authorise', 'Authorise'], ['fail', 'Fail']],
+    authorised: [['settle', 'Settle'], ['fail', 'Fail']],
+    settled: [['reverse', 'Reverse']],
+    reversed: [],
+    failed: [],
+  };
+
+  function renderPayments() {
+    const payments = store.payments;
+    const body = $('#paymentsBody');
+    body.innerHTML = '';
+    if (!payments.length) {
+      body.innerHTML = '<tr class="empty-row"><td colspan="5">No payments yet.</td></tr>';
+      return;
+    }
+    const accounts = store.accounts;
+    const nameFor = (id) => { const a = accounts.find(x => x.id === id); return a ? a.account_number : shortId(id); };
+    payments.forEach(p => {
+      const tr = document.createElement('tr');
+      const fx = p.fx_rate_id ? `<span class="fx-badge">FX → ${fmtAmount(p.creditor_amount)}</span>` : '';
+      const actions = (ACTIONS_FOR_STATUS[p.status] || []).map(([action, label]) =>
+        `<button class="btn small pay-action" data-id="${p.id}" data-action="${action}">${label}</button>`
+      ).join(' ');
+      tr.innerHTML = `
+        <td>${nameFor(p.debtor_account_id)} → ${nameFor(p.creditor_account_id)}</td>
+        <td class="num mono">${fmtAmount(p.amount)} ${p.currency}${fx}</td>
+        <td><span class="pill ${p.status}">${p.status}</span></td>
+        <td><span class="idchip" data-id="${p.id}">${shortId(p.id)}</span></td>
+        <td>${actions} <button class="btn small ghost refresh-pay" data-id="${p.id}">↻</button></td>
+      `;
+      body.appendChild(tr);
+    });
+    $$('.idchip', body).forEach(chip => copyChip(chip, chip.dataset.id));
+    $$('.pay-action', body).forEach(btn => btn.addEventListener('click', () => transitionPayment(btn.dataset.id, btn.dataset.action)));
+    $$('.refresh-pay', body).forEach(btn => btn.addEventListener('click', () => refreshPayment(btn.dataset.id)));
+  }
+
+  function upsertPayment(p) {
+    const payments = store.payments;
+    const idx = payments.findIndex(x => x.id === p.id);
+    if (idx >= 0) payments[idx] = p; else payments.unshift(p);
+    store.payments = payments;
+    renderPayments();
+  }
+
+  async function refreshPayment(id) {
+    try { upsertPayment(await api('GET', `/payments/${id}`)); }
+    catch (e) { toast(e.message, true); }
+  }
+
+  async function transitionPayment(id, action) {
+    try {
+      let result;
+      if (action === 'fail') {
+        result = await api('POST', `/payments/${id}/fail`, { body: { reason: 'manual test from console' } });
+      } else {
+        result = await api('POST', `/payments/${id}/${action}`);
+      }
+      upsertPayment(result);
+      toast(`Payment ${shortId(id)} → ${result.status}`);
+      afterPaymentSettle(result);
+    } catch (e) { toast(e.message, true); }
+  }
+
+  function afterPaymentSettle(p) {
+    if (p.status !== 'settled') return;
+    for (const id of [p.debtor_account_id, p.creditor_account_id]) {
+      const acc = store.accounts.find(a => a.id === id);
+      if (acc) refreshBalance(acc.id, acc.currency);
+    }
+  }
+
+  $('#paymentForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const debtorId = $('#pay-debtor').value, creditorId = $('#pay-creditor').value;
+    if (!debtorId || !creditorId) { toast('Create at least two accounts first', true); return; }
+    if (debtorId === creditorId) { toast('Debtor and creditor must be different accounts', true); return; }
+    const body = {
+      debtor_account_id: debtorId,
+      creditor_account_id: creditorId,
+      amount: $('#pay-amount').value,
+      currency: $('#pay-currency').value,
+      end_to_end_id: $('#pay-e2e').value.trim() || null,
+    };
+    const idemKey = $('#pay-idem').value;
+    try {
+      const payment = await api('POST', '/payments', { body, headers: { 'Idempotency-Key': idemKey } });
+      upsertPayment(payment);
+      toast('Payment initiated');
+      $('#pay-idem').value = newIdemKey();
+    } catch (err) { toast(err.message, true); }
+  });
+
+  $('#replayBtn').addEventListener('click', async () => {
+    const debtorId = $('#pay-debtor').value, creditorId = $('#pay-creditor').value;
+    if (!debtorId || !creditorId) { toast('Nothing to replay yet', true); return; }
+    const body = {
+      debtor_account_id: debtorId,
+      creditor_account_id: creditorId,
+      amount: $('#pay-amount').value,
+      currency: $('#pay-currency').value,
+      end_to_end_id: $('#pay-e2e').value.trim() || null,
+    };
+    try {
+      const payment = await api('POST', '/payments', { body, headers: { 'Idempotency-Key': $('#pay-idem').value } });
+      const known = store.payments.find(p => p.id === payment.id);
+      if (!known) upsertPayment(payment);
+      toast(`Replayed: same key returned payment ${shortId(payment.id)} again — no duplicate. (Shows the response cached at creation time, not current status.)`);
+    } catch (err) { toast(err.message, true); }
+  });
+
+  // ================= QR =================
+  $('#qrForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const accountId = $('#qr-account').value;
+    if (!accountId) { toast('Create an account first', true); return; }
+    const body = { account_id: accountId, merchant_city: $('#qr-city').value.trim() || 'Singapore' };
+    if ($('#qr-amount').value) body.amount = $('#qr-amount').value;
+    try {
+      const res = await api('POST', '/qr/generate', { body, raw: true });
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error(`${res.status}: ${t}`);
+      }
+      const payload = res.headers.get('X-SGQR-Payload') || '';
+      const blob = await res.blob();
+      $('#qrImage').src = URL.createObjectURL(blob);
+      $('#qrPayload').textContent = payload;
+      $('#qrResult').style.display = 'flex';
+      toast('QR generated');
+    } catch (err) { toast(err.message, true); }
+  });
+
+  // ================= WEBHOOKS =================
+  $('#genSecretBtn').addEventListener('click', () => {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    $('#wh-secret').value = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  });
+
+  $('#webhookForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const eventTypes = $$('#whEventChecks input:checked').map(c => c.value);
+    const body = { url: $('#wh-url').value.trim(), secret: $('#wh-secret').value, event_types: eventTypes };
+    try {
+      const sub = await api('POST', '/webhooks/subscriptions', { body });
+      toast(`Subscription created for ${sub.url}`);
+      $('#webhookForm').reset();
+    } catch (err) { toast(err.message, true); }
+  });
+
+  $('#refreshDlqBtn').addEventListener('click', async () => {
+    try {
+      const items = await api('GET', '/webhooks/dead-letters');
+      const body = $('#dlqBody');
+      body.innerHTML = items.length ? '' : '<tr class="empty-row"><td colspan="4">No dead letters. Nothing has exhausted its retries.</td></tr>';
+      items.forEach(d => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="mono">${d.event_type}</td>
+          <td class="num">${d.attempt_count}</td>
+          <td>${d.last_error || '—'}</td>
+          <td><span class="idchip" data-id="${d.payment_id || ''}">${d.payment_id ? shortId(d.payment_id) : '—'}</span></td>
+        `;
+        body.appendChild(tr);
+      });
+      $$('.idchip', body).forEach(chip => chip.dataset.id && copyChip(chip, chip.dataset.id));
+      toast(`${items.length} dead letter(s)`);
+    } catch (err) { toast(err.message, true); }
+  });
+
+  // ================= RECONCILIATION =================
+  $('#prefillReconBtn').addEventListener('click', () => {
+    const settled = store.payments.find(p => p.status === 'settled');
+    if (!settled) { toast('Settle a payment first to prefill an example', true); return; }
+    const ref = settled.end_to_end_id || settled.id;
+    const now = new Date().toISOString();
+    $('#recon-csv').value = `external_ref,amount,currency,settled_at\n${ref},${fmtAmount(settled.amount)},${settled.currency},${now}`;
+  });
+
+  $('#runReconBtn').addEventListener('click', async () => {
+    const csv = $('#recon-csv').value.trim();
+    if (!csv) { toast('Paste a settlement CSV first', true); return; }
+    const windowHours = $('#recon-window').value || 24;
+    try {
+      const run = await api('POST', `/reconciliation/run?window_hours=${windowHours}`, { body: csv });
+      $('#reconResult').style.display = 'block';
+      $('#reconMatched').textContent = `${run.matched_count} matched`;
+      $('#reconBreaks').textContent = `${run.break_count} break(s)`;
+      const body = $('#reconBody');
+      body.innerHTML = run.breaks.length ? '' : '<tr class="empty-row"><td colspan="4">No breaks. Everything matched.</td></tr>';
+      run.breaks.forEach(b => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="mono">${b.break_type}</td>
+          <td class="mono">${b.external_ref || '—'}</td>
+          <td class="num mono">${b.ledger_amount !== null ? fmtAmount(b.ledger_amount) : '—'}</td>
+          <td class="num mono">${b.settlement_amount !== null ? fmtAmount(b.settlement_amount) : '—'}</td>
+        `;
+        body.appendChild(tr);
+      });
+      toast(`Reconciliation run complete: ${run.matched_count} matched, ${run.break_count} break(s)`);
+    } catch (err) { toast(err.message, true); }
+  });
+
+  // ---------- init ----------
+  renderAccounts();
+  renderPayments();
+})();
+</script>
+</body>
+</html>
