@@ -5,6 +5,7 @@ from typing import Protocol, Self
 from app.domain.idempotency.repository import IdempotencyRepository
 from app.domain.ledger.repository import LedgerRepository
 from app.domain.payments.repository import PaymentRepository
+from app.domain.webhooks.repository import WebhookRepository
 
 
 class UnitOfWork(Protocol):
@@ -19,6 +20,7 @@ class UnitOfWork(Protocol):
     ledger: LedgerRepository
     payments: PaymentRepository
     idempotency: IdempotencyRepository
+    webhooks: WebhookRepository
 
     async def __aenter__(self) -> Self: ...
 
