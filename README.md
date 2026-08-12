@@ -71,7 +71,7 @@ This project is being built in milestones (see `docs/adr/` for design decisions 
 - [x] Payment lifecycle state machine — `initiated → authorised → settled → reversed/failed`, illegal transitions rejected in the domain layer; settle/reverse post their ledger entry and flip payment status in one atomic transaction
 - [x] Idempotency keys — required `Idempotency-Key` header on payment initiation, with a `POST /payments` retry-storm test proving N concurrent identical requests create exactly one payment
 - [x] ISO 20022 pain.001 / pacs.008 — `POST /iso20022/pain001` ingests a credit transfer initiation (account numbers resolved to internal accounts), `GET /iso20022/{id}/pacs008` emits the settled FI-to-FI message; XXE-hardened XML parsing
-- [ ] Webhooks + dead-letter queue
+- [x] Webhooks + dead-letter queue — transactional outbox (delivery enqueued in the same transaction as the payment state change), exponential backoff, `GET /webhooks/dead-letters`; dispatched by a dedicated `worker` service
 - [ ] Reconciliation job
 - [ ] SGQR QR generation + multi-currency FX
 - [ ] Load testing results + final metrics
