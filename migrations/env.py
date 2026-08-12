@@ -15,7 +15,11 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+# Respect a URL the caller already configured (e.g. tests pointing at a Testcontainers
+# instance); only fall back to app settings for the CLI/Docker path where alembic.ini
+# leaves sqlalchemy.url blank.
+if not config.get_main_option("sqlalchemy.url"):
+    config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
 
 def run_migrations_offline() -> None:
