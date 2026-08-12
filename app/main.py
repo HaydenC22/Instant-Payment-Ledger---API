@@ -7,6 +7,7 @@ from app.api.v1.accounts import router as accounts_router
 from app.api.v1.health import router as health_router
 from app.api.v1.iso20022 import router as iso20022_router
 from app.api.v1.payments import router as payments_router
+from app.api.v1.qr import router as qr_router
 from app.api.v1.reconciliation import router as reconciliation_router
 from app.api.v1.webhooks import router as webhooks_router
 from app.config import get_settings
@@ -29,6 +30,7 @@ def create_app() -> FastAPI:
     app.include_router(iso20022_router)
     app.include_router(webhooks_router)
     app.include_router(reconciliation_router)
+    app.include_router(qr_router)
     return app
 
 
