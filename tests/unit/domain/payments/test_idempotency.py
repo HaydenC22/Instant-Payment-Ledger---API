@@ -6,6 +6,7 @@ import pytest
 from app.domain.idempotency.errors import IdempotencyInProgressError, IdempotencyKeyReusedError
 from app.domain.payments.services import (
     IDEMPOTENCY_ENDPOINT_INITIATE_PAYMENT,
+    PaymentCurrencyMismatchError,
     hash_request_body,
     initiate_payment_idempotent,
 )
@@ -109,3 +110,36 @@ async def test_a_key_still_in_progress_is_rejected_as_a_concurrent_duplicate() -
         await _initiate(state, uow_factory, key="key-1")
 
     assert len(state.payments) == 0
+
+
+async def test_currency_mismatch_is_checked_before_claiming_the_idempotency_key() -> None:
+    """A currency mismatch fails identically on every retry — if it were checked *after*
+    claiming the key, the key would be orphaned "in progress" forever, and every retry
+    would see a 409 instead of the real 422.
+    """
+    state = FakeState()
+    debtor = state.seed_account(currency="SGD")
+    creditor = state.seed_account(currency="SGD")
+    uow_factory = make_uow_factory(state)
+
+    request_body = {
+        "debtor_account_id": str(debtor.id),
+        "creditor_account_id": str(creditor.id),
+        "amount": "20.00",
+        "currency": "USD",
+    }
+
+    for _ in range(2):
+        with pytest.raises(PaymentCurrencyMismatchError):
+            await initiate_payment_idempotent(
+                uow_factory,
+                idempotency_key="mismatch-key",
+                request_body=request_body,
+                debtor_account_id=debtor.id,
+                creditor_account_id=creditor.id,
+                amount=Decimal("20.00"),
+                currency="USD",  # debtor account is SGD
+            )
+
+    assert len(state.payments) == 0
+    assert (IDEMPOTENCY_ENDPOINT_INITIATE_PAYMENT, "mismatch-key") not in state.idempotency_records

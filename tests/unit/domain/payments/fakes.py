@@ -1,10 +1,14 @@
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
+from app.domain.fx.entities import FxRate
+from app.domain.fx.repository import FxRateNotFoundError
 from app.domain.idempotency.entities import IdempotencyOutcome, IdempotencyOutcomeKind
-from app.domain.ledger.entities import JournalEntry
+from app.domain.ledger.entities import Account, JournalEntry
+from app.domain.ledger.repository import AccountNotFoundError
 from app.domain.payments.entities import Payment, PaymentStatus
 from app.domain.webhooks.entities import WebhookSubscription
 
@@ -12,6 +16,9 @@ from app.domain.webhooks.entities import WebhookSubscription
 @dataclass
 class FakeState:
     account_versions: dict[UUID, int] = field(default_factory=dict)
+    accounts: dict[UUID, Account] = field(default_factory=dict)
+    accounts_by_number: dict[str, Account] = field(default_factory=dict)
+    fx_rates: dict[tuple[str, str], FxRate] = field(default_factory=dict)
     payments: dict[UUID, Payment] = field(default_factory=dict)
     committed_entries: list[JournalEntry] = field(default_factory=list)
     status_history: list[tuple] = field(default_factory=list)
@@ -30,6 +37,40 @@ class FakeState:
         )
         self.active_subscriptions.append(sub)
         return sub
+
+    def seed_account(
+        self,
+        *,
+        account_id: UUID | None = None,
+        account_number: str | None = None,
+        currency: str = "SGD",
+    ) -> Account:
+        account_id = account_id or uuid4()
+        account_number = account_number or f"ACC-{str(account_id)[:8]}"
+        account = Account(
+            id=account_id,
+            account_number=account_number,
+            owner_name="Fake Owner",
+            account_type="customer",
+            currency=currency,
+            status="active",
+            version=self.account_versions.get(account_id, 0),
+        )
+        self.accounts[account_id] = account
+        self.accounts_by_number[account_number] = account
+        return account
+
+    def seed_fx_rate(self, *, base_currency: str, quote_currency: str, rate: Decimal) -> FxRate:
+        fx_rate = FxRate(
+            id=uuid4(),
+            base_currency=base_currency,
+            quote_currency=quote_currency,
+            rate=rate,
+            booked_at=datetime.now(UTC),
+            source="test",
+        )
+        self.fx_rates[(base_currency, quote_currency)] = fx_rate
+        return fx_rate
 
     def seed_payment(self, **overrides) -> Payment:
         defaults = dict(
@@ -55,6 +96,26 @@ class _FakeLedgerRepository:
         self._attempt_index = attempt_index
         self._forced_ledger_conflicts = forced_ledger_conflicts
 
+    async def get_account(self, account_id: UUID) -> Account:
+        if account_id in self._state.accounts:
+            return self._state.accounts[account_id]
+        # Auto-vivify a default SGD account for tests that don't care about currency —
+        # only FX-specific tests need to explicitly seed_account() with a real currency.
+        return Account(
+            id=account_id,
+            account_number=f"ACC-{str(account_id)[:8]}",
+            owner_name="Fake Owner",
+            account_type="customer",
+            currency="SGD",
+            status="active",
+            version=self._state.account_versions.get(account_id, 0),
+        )
+
+    async def get_account_by_number(self, account_number: str) -> Account:
+        if account_number not in self._state.accounts_by_number:
+            raise AccountNotFoundError(account_number)
+        return self._state.accounts_by_number[account_number]
+
     async def get_account_versions(self, account_ids):
         return {aid: self._state.account_versions.setdefault(aid, 0) for aid in account_ids}
 
@@ -70,6 +131,17 @@ class _FakeLedgerRepository:
             return False
         self._pending["account_versions"][account_id] = current + 1
         return True
+
+
+class _FakeFxRepository:
+    def __init__(self, state: FakeState):
+        self._state = state
+
+    async def get_latest_rate(self, *, base_currency: str, quote_currency: str) -> FxRate:
+        key = (base_currency, quote_currency)
+        if key not in self._state.fx_rates:
+            raise FxRateNotFoundError(base_currency, quote_currency)
+        return self._state.fx_rates[key]
 
 
 class _FakePaymentRepository:
@@ -117,6 +189,9 @@ class _FakePaymentRepository:
         self, payment_id, from_status, to_status, reason=None
     ) -> None:
         self._pending["status_history"].append((payment_id, from_status, to_status, reason))
+
+    async def set_fx_details(self, payment_id, *, fx_rate_id, creditor_amount) -> None:
+        self._pending["fx_details"] = (payment_id, fx_rate_id, creditor_amount)
 
 
 class _FakeIdempotencyRepository:
@@ -169,7 +244,7 @@ class _FakeWebhookRepository:
 
 class FakeUnitOfWork:
     """In-memory stand-in for the Postgres-backed unit of work, spanning ledger + payments
-    + idempotency."""
+    + idempotency + webhooks + fx."""
 
     def __init__(
         self,
@@ -184,6 +259,7 @@ class FakeUnitOfWork:
         self.payments: _FakePaymentRepository | None = None
         self.idempotency: _FakeIdempotencyRepository | None = None
         self.webhooks: _FakeWebhookRepository | None = None
+        self.fx: _FakeFxRepository | None = None
         self._pending: dict = {}
 
     async def __aenter__(self) -> "FakeUnitOfWork":
@@ -194,6 +270,7 @@ class FakeUnitOfWork:
             "entries": [],
             "new_payment": None,
             "payment_update": None,
+            "fx_details": None,
             "status_history": [],
             "idempotency_claim": None,
             "idempotency_complete": None,
@@ -207,6 +284,7 @@ class FakeUnitOfWork:
         )
         self.idempotency = _FakeIdempotencyRepository(self._state, self._pending)
         self.webhooks = _FakeWebhookRepository(self._state, self._pending)
+        self.fx = _FakeFxRepository(self._state)
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
@@ -223,6 +301,12 @@ class FakeUnitOfWork:
             current = self._state.payments[payment_id]
             self._state.payments[payment_id] = replace(
                 current, status=new_status, version=current.version + 1
+            )
+        if self._pending["fx_details"] is not None:
+            payment_id, fx_rate_id, creditor_amount = self._pending["fx_details"]
+            current = self._state.payments[payment_id]
+            self._state.payments[payment_id] = replace(
+                current, fx_rate_id=fx_rate_id, creditor_amount=creditor_amount
             )
         self._state.status_history.extend(self._pending["status_history"])
         if self._pending["idempotency_claim"] is not None:
@@ -247,6 +331,7 @@ class FakeUnitOfWork:
             "entries": [],
             "new_payment": None,
             "payment_update": None,
+            "fx_details": None,
             "status_history": [],
             "idempotency_claim": None,
             "idempotency_complete": None,

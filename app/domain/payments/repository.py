@@ -39,3 +39,11 @@ class PaymentRepository(Protocol):
         to_status: PaymentStatus,
         reason: str | None = None,
     ) -> None: ...
+
+    async def set_fx_details(
+        self, payment_id: UUID, *, fx_rate_id: UUID, creditor_amount: Decimal
+    ) -> None:
+        """Records the rate actually booked at settlement, so a later reversal can undo
+        exactly what was moved rather than recomputing against a possibly-different rate.
+        """
+        ...
